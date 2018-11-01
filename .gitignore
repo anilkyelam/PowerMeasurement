@@ -1,3 +1,4 @@
+*.code
 ccied2*/
 spark_*gb_*.log
 # Byte-compiled / optimized / DLL files
