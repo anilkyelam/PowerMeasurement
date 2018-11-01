@@ -1,0 +1,31 @@
+[0m[[0m[0minfo[0m] [0m[0mPackaging /home/shw328/sparkscala_v210/target/scala-2.11/sortbytesscala_2.11-1.2.0.jar ...[0m
+[0m[[0m[0mdebug[0m] [0m[0mInput file mappings:[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort/sortBytesScala$$anonfun$2.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort/sortBytesScala$$anonfun$2.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ch/cern/testSparkMeasure/testSparkMeasure$$anonfun$main$1.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/ch/cern/testSparkMeasure/testSparkMeasure$$anonfun$main$1.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort/sortBytesScala.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort/sortBytesScala.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ch/cern/testSparkMeasure/testSparkMeasure$$anonfun$3.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/ch/cern/testSparkMeasure/testSparkMeasure$$anonfun$3.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ch[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/ch[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort/sortBytesScala$$anon$1.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort/sortBytesScala$$anon$1.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ch/cern/testSparkMeasure[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/ch/cern/testSparkMeasure[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort/sortBytesScala$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort/sortBytesScala$.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	ch/cern[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/ch/cern[0m
+[0m[[0m[0mdebug[0m] [0m[0m	edu/uscd/sysnet/sort/sortBytesScala$$anonfun$1.class[0m
+[0m[[0m[0mdebug[0m] [0m[0m	  /home/shw328/sparkscala_v210/target/scala-2.11/classes/edu/uscd/sysnet/sort/sortBytesScala$$anonfun$1.class[0m
+[0m[[0m[0minfo[0m] [0m[0mDone packaging.[0m

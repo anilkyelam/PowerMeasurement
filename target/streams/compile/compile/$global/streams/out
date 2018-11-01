@@ -1,0 +1,4 @@
+[0m[[0m[31merror[0m] [0m[0m/home/shw328/sparkscala_v210/src/main/scala/sortBytesScala.scala:55:31: object sparkmeasure is not a member of package ch.cern[0m
+[0m[[0m[31merror[0m] [0m[0m    val taskMetrics = ch.cern.sparkmeasure.TaskMetrics(spark)[0m
+[0m[[0m[31merror[0m] [0m[0m                              ^[0m
+[0m[[0m[31merror[0m] [0m[0mone error found[0m
