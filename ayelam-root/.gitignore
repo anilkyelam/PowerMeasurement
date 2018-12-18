@@ -1,6 +1,14 @@
-*.code
-ccied2*/
-spark_*gb_*.log
+
+# Ignore credential files
+*.pass
+
+# Ignore temp directories
+Temp/
+temp/
+
+# IntelliJ editor temp files
+.idea/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -23,6 +31,7 @@ parts/
 sdist/
 var/
 wheels/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
@@ -41,6 +50,7 @@ pip-delete-this-directory.txt
 # Unit test / coverage reports
 htmlcov/
 .tox/
+.nox/
 .coverage
 .coverage.*
 .cache
@@ -70,10 +80,14 @@ instance/
 docs/_build/
 
 # PyBuilder
-#target/
+target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
 
 # pyenv
 .python-version
@@ -105,7 +119,25 @@ venv.bak/
 
 # mypy
 .mypy_cache/
+.dmypy.json
+dmypy.json
 
-# Ignore temp folders
-Temp/
-temp/
+# Pyre type checker
+.pyre/
+
+
+# PyCharm editor temp venv folders
+venv/
+venv1/
+venv2/
+venv3/
+venv4/
+
+*.class
+*.log
+
+# Scala target folders
+target/*
+
+# Scala test input folders
+input/

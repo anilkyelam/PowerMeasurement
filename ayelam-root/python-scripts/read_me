@@ -1,0 +1,10 @@
+
+
+
+
+**** Required Third-party Python Libraries *****
+
+matplotlib
+paramiko
+python-usbtmc
+python-vxi11
