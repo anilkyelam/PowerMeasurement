@@ -6,6 +6,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext._
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.SparkConf
+import org.apache.spark.mllib.random.RandomRDDs._
+import org.apache.spark.ml.linalg._
 
 
 // sbt build issues: https://stackoverflow.com/questions/45531198/warnings-while-building-scala-spark-project-with-sbt
@@ -56,10 +58,12 @@ object sortBytesScala {
     //taskMetrics.begin()
 
     val sc = spark.sparkContext
+    var rand_RDD: RDD[Array[Double]] = uniformVectorRDD(sc, 1280000000, 100).map(vec => vec.toArray)
+    rand_RDD.
     var text_RDD: RDD[Array[Byte]] = sc.binaryRecords(inputPath,100) 
     var kv_RDD: RDD[(Array[Byte],Array[Byte])] = text_RDD.map(line => (line.slice(0,10), line.slice(10,100)))
-    text_RDD.unpersist();
-    text_RDD=null;
+    //text_RDD.unpersist();
+    //text_RDD=null;
     // on aws
     kv_RDD.sortBy(_._1, true).saveAsObjectFile(outputPath)
 

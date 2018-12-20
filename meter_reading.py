@@ -1,5 +1,6 @@
 import time
 #import usbtmc
+import _thread
 import vxi11
 import os, sys
 
@@ -9,7 +10,7 @@ def do_every(period,max_count,f,*args):
         t = time.time()
         count = 0
         while True:
-            count += 1
+            count += 1 #0.001
             yield max(t + count*period - time.time(),0)
     g = g_tick()
     count = 0 
@@ -26,13 +27,26 @@ def power_reading(outfile):
     #print(reading)
     outfile.write('{:.4f},'.format(time.time())+reading+"\n")	
     #time.sleep(.1)
+def print_device(period, max_count):
+	count = 0
+	print(period)
+	print(max_count)
+	while count < max_count:
+		t = time.time()
+		device=instr.ask("*IDN?")
+		print('{:.4f}'.format(time.time())+"\n")
+		time.sleep(period)
+		count += 1
+
+def device_name(outfile):
+	device=instr.ask("*IDN?")
+	outfile.write('{:.4f}'.format(time.time())+"\n")
 
 timestamp = sys.argv[1]
 max_count = int(sys.argv[2])
+period = int(sys.argv[3])
 outfile = open("power_"+timestamp+".txt", "w")
-#instr=vxi11.Instrument("172.19.222.92")
 instr=vxi11.Instrument("172.19.222.92","gpib0,12")
-#instr = usbtmc.Instrument(usbtmc.list_devices()[0])
 
 ##Handle the USB coonection can have e
 try:
@@ -46,5 +60,8 @@ except Exception as ex:
     print(ex)
     pass  
 print(instr.ask("*IDN?"))
-do_every(1, max_count, power_reading, outfile)
+instr.write("*IDN?")
+do_every(period, max_count, power_reading, outfile)
+#_thread.start_new_thread( print_device, (1, max_count) )
+#do_every(0.01, max_count, power_reading, outfile)
 outfile.close()
