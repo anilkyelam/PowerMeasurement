@@ -1,6 +1,7 @@
 import os
 import re
 from datetime import datetime
+from dateutil import tz
 from collections import Counter
 import plot_one_experiment
 
@@ -8,13 +9,26 @@ import plot_one_experiment
 power_meter_nodes_in_order = ["ccied21", "ccied22", "ccied23", "ccied24"]
 
 def parse_power_usage_across_experiments():
-    exp_start_time = datetime.strptime("18/12/13 23:01:33", "%y/%m/%d %H:%M:%S")
-    exp_end_time = datetime.strptime("18/12/13 23:59:42", "%y/%m/%d %H:%M:%S")
+    # 2018-12-13 13:54:28	2018-12-13 14:50:28
+
+    utc_zone = tz.gettz('UTC')
+    pst_zone = tz.gettz('PST')
+
+    exp_start_time_utc = datetime.strptime("2018-12-20 00:11:10", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc_zone)
+    exp_end_time_utc = datetime.strptime("2018-12-20 01:06:06", "%Y-%m-%d %H:%M:%S").replace(tzinfo=utc_zone)
+
+    # exp_start_time = exp_start_time_utc.astimezone(pst_zone).replace(tzinfo=None)
+    # exp_end_time = exp_end_time_utc.astimezone(pst_zone).replace(tzinfo=None)
+    # exp_start_time = datetime.strptime("18/12/09 16:25:01", "%y/%m/%d %H:%M:%S")
+    # exp_end_time = datetime.strptime("18/12/09 17:24:03", "%y/%m/%d %H:%M:%S")
+    exp_start_time = datetime.strptime("2018-12-20 20:52:23", "%Y-%m-%d %H:%M:%S")
+    exp_end_time = datetime.strptime("2018-12-20 21:50:28", "%Y-%m-%d %H:%M:%S")
 
     # Get power file and parse it
     raw_power_readings = Counter()
     all_power_readings = []
-    power_readings_file_path = os.path.join("D:\Git\PowerMeasurement", "power_1544770886.txt")
+    power_readings_file_name = "power_1545367936_1000.txt"
+    power_readings_file_path = os.path.join("D:\Git\PowerMeasurement\\temp", power_readings_file_name)
     # power_readings_file_path = os.path.join("D:\Power Measurements\Exp-2018-12-10-18-12-42\ccied21", "power_readings.txt")
     power_readings_counter = 0
     with open(power_readings_file_path, "r") as lines:
@@ -22,6 +36,7 @@ def parse_power_usage_across_experiments():
             matches = re.match(plot_one_experiment.power_regex, line)
             if matches:
                 timestamp = datetime.fromtimestamp(float(matches.group(1)))
+                # print(timestamp, power_readings_counter)
                 power_readings_counter += 1
 
                 i = 0
@@ -45,7 +60,7 @@ def parse_power_usage_across_experiments():
         power_consumed = sum(map(lambda r: r[3], all_readings_node))
         total_power_consumed += power_consumed
 
-    print("Experiment times {0} to {1}", exp_start_time, exp_end_time)
+    print("Experiment: {0}, Times {0} to {1}".format(power_readings_file_name, exp_start_time, exp_end_time))
     print("Total power joules: " + str(total_power_consumed))
     print("Total power watt-hours: " + str(total_power_consumed/3600))
 
@@ -57,9 +72,10 @@ def parse_power_usage_across_experiments():
     total_raw_power = sum(raw_power_readings.values())
     raw_power_during_exp = sum([value for key, value in raw_power_readings.items() if key < exp_end_time])
 
-    print("Power collection times {0} to {1}", min_time, max_time)
+    print("Power collection times {0} to {1}".format(min_time, max_time))
     print("Raw total power {0} watt-hours and duration {1} seconds".format(total_raw_power/3600, (max_time - min_time).seconds))
-    print("Raw exp power {0} watt-hours and duration {1} seconds".format(raw_power_during_exp/3600, (exp_end_time - exp_start_time).seconds))
+    print("Raw exp power {0} watt-hours and duration {1} minutes".format(round(raw_power_during_exp/3600, 2),
+                                                                         round((exp_end_time - exp_start_time).seconds/60, 1)))
 
 
 if __name__ == '__main__':

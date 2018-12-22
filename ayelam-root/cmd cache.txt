@@ -1,0 +1,54 @@
+
+
+
+
+======== Spark submit job commands
+spark2-submit --class PowerMeasurements.SortBytes "${SRC_DIR_FULL_PATH}/target/scala-2.11/sort_2.11-0.1.jar" \
+        yarn "/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input" "/user/ayelam/sort_outputs/${SIZE_IN_MB}mb.output" \
+        "/user/ayelam/sort_stats/${SIZE_IN_MB}mb.stats" > ${RESULTS_DIR_FULL_PATH}/spark.log 2>&1
+
+nohup spark2-submit --master yarn --num-executors 1500 --packages ch.cern.sparkmeasure:spark-measure_2.11:0.13 \
+	--class edu.uscd.sysnet.sort.sortBytesScala target/scala-2.11/sortbytesscala_2.11-1.2.0.jar \
+	/user/shw328/${SIZE}gb.input /user/ayelam/sort_outputs/${SIZE}gb_output /user/ayelam/sort_outputs/taskstats_${unixstamp} > spark_${SIZE}gb_${unixstamp}.log 2>&1 &
+		
+		
+======== Local Spark Commands
+spark-submit --class PowerMeasurements.SortNoDisk "D:\SparkSort\target\scala-2.11\sparksort_2.11-0.1.jar" local "D:\SparkSort\input\100mb.input" 
+
+
+/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input
+/user/shw328/128gb.input < Revert in run_sort_job.sh and prepare_for_experiment.sh
+
+ 
+======== HDFS Cache Management commands
+hdfs cacheadmin -listPools
+sudo -u hdfs hdfs cacheadmin -addPool anil-cache-pool
+hdfs cacheadmin -listDirectives
+sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/1000mb.input" -pool anil-cache-pool
+sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/5000mb.input" -pool anil-cache-pool
+sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/10000mb.input" -pool anil-cache-pool
+hdfs cacheadmin -listPools -stats anil-cache-pool
+
+sudo -u hdfs hdfs cacheadmin -removeDirective <directive-id>
+sudo -u hdfs dfs cacheadmin -removePool anil-cache-pool
+
+
+======== HDFS Commands
+Get data block placement for a file:	 
+
+
+
+======= Firewall ports opened
+50070 - HDFS namenode
+50075 - HDFS data node
+4040, 8088, 18089 - Spark ports
+
+sudo iptables -A INPUT -s 137.110.222.168 -p tcp --dport 4040 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
+sudo iptables -I INPUT 12 -s ayelam.sysnet.ucsd.edu -p tcp --dport 4040 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied21
+sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 8088 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT			// ccied28
+sudo iptables -I INPUT 11 -s ayelam.sysnet.ucsd.edu -p tcp --dport 18089 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied26
+sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50070 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied30
+sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50070 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied9
+sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50075 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied29
+
+

@@ -30,12 +30,12 @@ def path_to_windows_style(path):
 # Remote node constants
 remote_home_folder = '/home/ayelam/sparksort/'
 remote_results_folder = '/home/ayelam/sparksort/results'
-source_code_folder_name = 'src'
+source_code_folder_name = 'node-scripts'
 source_code_folder_path = path_to_linux_style(os.path.join(remote_home_folder, source_code_folder_name))
 
 
 # Local node constants
-local_source_folder = "D:\src"
+local_source_folder = "D:\Git\PowerMeasurement\\ayelam-root\\node-scripts"
 local_results_folder = "D:\Power Measurements"
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
@@ -92,11 +92,13 @@ def start_power_readings(ssh_client, node_exp_folder_path):
 
 
 # Starts spark job with specified algorithm (scala class name) and input size.
-def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name):
+def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name, limit_executors):
     print("Starting spark job")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, run_spark_job_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2} {3} {4}'.format(script_file, source_code_folder_path,
-                                                        node_exp_folder_path, input_size_mb, scala_class_name))
+    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2} {3} {4} {5}'.format(script_file, source_code_folder_path,
+                                                                                    node_exp_folder_path, input_size_mb,
+                                                                                    scala_class_name,
+                                                                                    1 if limit_executors else 0))
     print(stdout.read(), stderr.read())
 
 
@@ -157,7 +159,7 @@ def reset_network_rate_limit(ssh_client, password_for_sudo):
 
 
 # Prepares necessary setup to collect readings and runs spark jobs.
-def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps):
+def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_executors):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
 
@@ -166,7 +168,7 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps):
         experiment_folder_path = path_to_linux_style(os.path.join(remote_results_folder, experiment_folder_name))
 
         print("Starting experiment: ", experiment_id)
-        user_password_info = open("user_pass.txt").readline()   # One line in <user>;<password> format.
+        user_password_info = open("user.pass").readline()   # One line in <user>;<password> format.
         user_name = user_password_info.split(";")[0]
         password = user_password_info.split(";")[1]
         driver_node_full_name = "{0}.{1}".format(designated_driver_node, spark_nodes_dns_suffx)
@@ -210,7 +212,7 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps):
 
         # Kick off the run
         spark_job_start_time = datetime.datetime.now()
-        run_spark_job(driver_ssh_client, driver_exp_folder_path, input_size_mb, scala_class_name)
+        run_spark_job(driver_ssh_client, driver_exp_folder_path, input_size_mb, scala_class_name, limit_executors)
         spark_job_end_time = datetime.datetime.now()
 
         # Wait a bit after the run
@@ -245,7 +247,8 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps):
                 "LinkBandwidthMbps": link_bandwidth_mbps,
                 "PaddingInSecs": padding_in_secs,
                 "ScalaClassName": scala_class_name,
-                "InputHdfsCached": True
+                "InputHdfsCached": False,
+                "LimitExecutors": limit_executors
             }, setup_file, indent=4, sort_keys=True)
 
         # Cleanup on each node
@@ -267,22 +270,21 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps):
 
 def main():
     scala_class_name = "SortNoDisk"
-    input_sizes_mb = [20000]
-    link_bandwidth_mbps = [400]
-    iterations = range(1, 4)
+    # input_sizes_mb = [50000]
+    # link_bandwidth_mbps = [200, 400, 600, 800, 1000]
+    # iterations = range(1, 4)
 
-    # input_sizes_mb = [1000]
-    # link_bandwidth_mbps = [200]
-    # iterations = [1]
+    input_sizes_mb = [128000]
+    link_bandwidth_mbps = [1024]
+    iterations = range(1, 10)
 
     # run_experiment(input_size_gb=10, link_bandwidth_mbps=500)
     for input_size_mb in input_sizes_mb:
         for link_bandwidth in link_bandwidth_mbps:
             for _ in iterations:
                 print("Running experiment: {0}, {1}".format(input_size_mb, link_bandwidth))
-                experiment_id = run_experiment(scala_class_name, int(input_size_mb), link_bandwidth)
-                # if experiment_id is not None:
-                    # parse_and_plot_results.parse_and_plot_results(experiment_id)
+                run_experiment(scala_class_name, int(input_size_mb), link_bandwidth, limit_executors=True)
+                time.sleep(30*)
 
 
 if __name__ == '__main__':

@@ -9,6 +9,7 @@ from datetime import timedelta
 import random
 import matplotlib.pyplot as plt
 import json
+import traceback as tc
 
 
 # Experiment setup class
@@ -50,7 +51,7 @@ cpu_all_cores_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+(all)\s+([0-9]+\.[0-9]+)
 # Example: <06:38:09 PM        lo     12.00     12.00      2.13      2.13      0.00      0.00      0.00      0.00>
 network_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([a-z0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+'
 # Example: <06:38:09 PM    779700  15647244     95.25     65368   7407236  15733700     47.40   9560972   5486404      1292>
-memory_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+'
+memory_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+'
 # Example: <06:38:09 PM     21.00     21.00      0.00   2416.00      0.00>
 io_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)$'
 # Example: <1541731089.0383,112.50,95.172,98.975,97.549>
@@ -177,41 +178,41 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
 
                     all_readings.append([timestamp, node_name, "mem_usage_percent", mem_usage_percent])
 
-        # Parse disk IO usage
+        # Parse disk IO usage (Disk IO may not exist for some experiments, so skip it if it does not exist)
         diskio_full_path = os.path.join(node_results_dir, diskio_readings_file_name)
+        if os.path.exists(diskio_full_path):
+            with open(diskio_full_path, "r") as lines:
+                first_line = True
+                date_part = None
+                previous_reading_time_part = None
+                for line in lines:
+                    if first_line:
+                        date_string = parse_date_from_sar_file(first_line_in_file=line)
+                        date_part = datetime.strptime(date_string, '%m/%d/%Y')
+                        first_line = False
 
-        with open(diskio_full_path, "r") as lines:
-            first_line = True
-            date_part = None
-            previous_reading_time_part = None
-            for line in lines:
-                if first_line:
-                    date_string = parse_date_from_sar_file(first_line_in_file=line)
-                    date_part = datetime.strptime(date_string, '%m/%d/%Y')
-                    first_line = False
+                    matches = re.match(io_regex, line)
+                    if matches:
+                        time_string = matches.group(1)
 
-                matches = re.match(io_regex, line)
-                if matches:
-                    time_string = matches.group(1)
+                        # Add a day when experiment runs past midnight, when the hour of the first reading is smaller than the one before.
+                        time_part = datetime.strptime(time_string, '%I:%M:%S %p')
+                        if previous_reading_time_part is not None and previous_reading_time_part.hour > time_part.hour:
+                            date_part = date_part + timedelta(days=1)
+                        previous_reading_time_part = time_part
 
-                    # Add a day when experiment runs past midnight, when the hour of the first reading is smaller than the one before.
-                    time_part = datetime.strptime(time_string, '%I:%M:%S %p')
-                    if previous_reading_time_part is not None and previous_reading_time_part.hour > time_part.hour:
-                        date_part = date_part + timedelta(days=1)
-                    previous_reading_time_part = time_part
+                        timestamp = date_part.replace(hour=time_part.hour, minute=time_part.minute, second=time_part.second)
+                        disk_rps = float(matches.group(3))
+                        disk_wps = float(matches.group(4))
+                        disk_brps = float(matches.group(5))
+                        disk_bwps = float(matches.group(6))
 
-                    timestamp = date_part.replace(hour=time_part.hour, minute=time_part.minute, second=time_part.second)
-                    disk_rps = float(matches.group(3))
-                    disk_wps = float(matches.group(4))
-                    disk_brps = float(matches.group(5))
-                    disk_bwps = float(matches.group(6))
-
-                    all_readings.append([timestamp, node_name, "disk_reads_ps", disk_rps])
-                    all_readings.append([timestamp, node_name, "disk_writes_ps", disk_wps])
-                    all_readings.append([timestamp, node_name, "disk_total_ps", disk_rps + disk_wps])
-                    all_readings.append([timestamp, node_name, "disk_breads_ps", disk_brps])
-                    all_readings.append([timestamp, node_name, "disk_bwrites_ps", disk_bwps])
-                    all_readings.append([timestamp, node_name, "disk_btotal_ps", disk_brps + disk_bwps])
+                        all_readings.append([timestamp, node_name, "disk_reads_ps", disk_rps])
+                        all_readings.append([timestamp, node_name, "disk_writes_ps", disk_wps])
+                        all_readings.append([timestamp, node_name, "disk_total_ps", disk_rps + disk_wps])
+                        all_readings.append([timestamp, node_name, "disk_breads_ps", disk_brps])
+                        all_readings.append([timestamp, node_name, "disk_bwrites_ps", disk_bwps])
+                        all_readings.append([timestamp, node_name, "disk_btotal_ps", disk_brps + disk_bwps])
 
     # Parse power measurements and attribute them to each node connected to power meter
     designated_driver_results_path = os.path.join(results_dir_path, experiment_setup.designated_driver_node)
@@ -241,6 +242,11 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                 timestamp = datetime.strptime(time_string, '%y/%m/%d %H:%M:%S')
                 stage = float(matches.group(2))
                 node_name = matches.group(3)
+
+                # If only results from subset of the nodes are available (rare case)
+                if node_name not in experiment_setup.all_spark_nodes:
+                    continue
+
                 if "Starting task" in line:
                     task_counter[node_name] += 1
                 else:
@@ -417,12 +423,15 @@ def filter_experiments_to_consider():
     # datetime.strptime('2018-11-29 00:00:00', '%Y-%m-%d %H:%M:%S')
     # datetime.strptime('2018-12-06 00:00:00', '%Y-%m-%d %H:%M:%S')
     # datetime.strptime('2018-12-10 00:00:00', '%Y-%m-%d %H:%M:%S')
-    start_time = datetime.strptime('2018-12-17 00:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2018-12-20 00:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
+    # All experiments after start_time that doesn't already have plots_ folder.
     experiments_to_consider = []
     all_experiments = [os.path.join(results_base_dir, item) for item in os.listdir(results_base_dir)
-               if item.startswith("Exp-") and os.path.isdir(os.path.join(results_base_dir, item))]
+               if item.startswith("Exp-")
+                   and os.path.isdir(os.path.join(results_base_dir, item))
+                   and not [subdir for subdir in os.listdir(os.path.join(results_base_dir, item)) if subdir.startswith("plots_")]]
 
     for experiment_dir_path in all_experiments:
         experiment_id = os.path.basename(experiment_dir_path)
@@ -434,14 +443,12 @@ def filter_experiments_to_consider():
 
 
 if __name__ == "__main__":
-    # experiment_id = "Exp-2018-12-11-08-17-47"
-    # parse_and_plot_results(experiment_id)
-
+    # all_experiments = ["Sting-Exp-2018-12-19-23-43-24"]
     all_experiments = filter_experiments_to_consider()
     for experiment_id in all_experiments:
         try:
             print("Parsing experiment " + experiment_id)
             parse_and_plot_results(experiment_id)
         except Exception as e:
-            print(e)
+            tc.print_exc(e)
             pass
