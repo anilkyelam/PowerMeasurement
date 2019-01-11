@@ -1,5 +1,5 @@
 """
-Aggregates power readings from multiple experiments and generates plots
+Aggregates Power and other metrics across multiple experiments and generates plots
 """
 
 import os
@@ -142,13 +142,14 @@ def get_metrics_summary_for_experiment(experiment_id):
     return ExperimentMetrics(experiment_id, experiment_setup, per_node_metrics_dict)
 
 
-def plot_total_power_usage(run_id, exp_metrics_list, output_dir, node_name=None):
+def plot_total_power_usage(run_id, run_type, exp_metrics_list, output_dir, node_name=None):
     """
     Plots total power usage. If node_name is not None, filters for the node.
     """
 
     fig, ax = plt.subplots(1,1)
-    fig.suptitle("Energy consumption (No optimizations)" + ("on node {0}".format(node_name) if node_name else " - all nodes"))
+    fig.suptitle("Energy consumption ({0}) ".format(run_type) +
+                 ("on node {0}".format(node_name) if node_name else " - all nodes"))
     ax.set_xlabel("Link bandwidth Mbps")
     ax.set_ylabel("Energy (watt-hours)")
 
@@ -186,13 +187,14 @@ def plot_total_power_usage(run_id, exp_metrics_list, output_dir, node_name=None)
     plt.savefig(output_full_path)
 
 
-def plot_total_disk_usage(run_id, exp_metrics_list, output_dir, node_name=None):
+def plot_total_disk_usage(run_id, run_type, exp_metrics_list, output_dir, node_name=None):
     """
     Plots total disk reads/writes. If node_name is not None, filters for the node.
     """
 
     fig, (ax1, ax2) = plt.subplots(2, 1)
-    fig.suptitle("Disk usage (No optimizations)" + ("on node {0}".format(node_name) if node_name else " - all nodes"))
+    fig.suptitle("Disk usage ({0}) ".format(run_type) +
+                 ("on node {0}".format(node_name) if node_name else " - all nodes"))
 
     all_sizes = sorted(set(map(lambda r: r.input_size_gb, exp_metrics_list)))
     for size in all_sizes:
@@ -235,34 +237,39 @@ def plot_total_disk_usage(run_id, exp_metrics_list, output_dir, node_name=None):
     plt.savefig(output_full_path)
 
 
-def plot_experiment_duration(run_id, experiment_power_results, output_dir):
+def plot_experiment_duration(run_id, run_type, exp_metrics_list, output_dir):
     """
-    Takes list of ExperimentRunResult objects, one for power usage on each node in each experiment
+    Takes list of ExperimentMetrics objects with info on each experiment
     """
 
     fig, ax = plt.subplots(1,1)
     fig.set_size_inches(w=5,h=5)
-    fig.suptitle("Experiment duration vs Link bandwidth")
+    fig.suptitle("Experiment duration ({0})".format(run_type))
     ax.set_xlabel("Link bandwidth Mbps")
     ax.set_ylabel("Duration (secs)")
 
-    all_sizes = set(map(lambda r: r.input_size_gb, experiment_power_results))
+    all_sizes = sorted(set(map(lambda r: r.input_size_gb, exp_metrics_list)))
     for size in all_sizes:
-        size_filtered = list(filter(lambda r: r.input_size_gb == size, experiment_power_results))
+        size_filtered = list(filter(lambda r: r.input_size_gb == size, exp_metrics_list))
+        # There may be multiple runs for the same setup, calculate average over those runs.
         all_link_rates = sorted(set(map(lambda r: r.link_bandwidth_mbps, size_filtered)))
-        avg_duration = []
+        avg_durations = []
+        std_durations = []
         for link_rate in all_link_rates:
-            filtered_readings = list(map(lambda m: m.duration.seconds,
-                                               filter(lambda f: f.link_bandwidth_mbps == link_rate, size_filtered)))
-            avg_duration.append(np.mean(filtered_readings))
-        ax.plot(all_link_rates, avg_duration, label='{0}GB'.format(size), marker='x')
+            link_filtered = list(filter(lambda f: f.link_bandwidth_mbps == link_rate, size_filtered))
+            all_exp_durations = [e.duration.total_seconds() for e in link_filtered]
+            # avg_power_readings.append(math.log(np.mean(power_values)))
+            avg_durations.append(np.mean(all_exp_durations))
+            std_durations.append(np.std(all_exp_durations))
+
+        ax.errorbar(all_link_rates, avg_durations, std_durations, label='{0} GB'.format(size), marker="x")
 
     plt.legend()
-    plt.show()
+    # plt.show()
 
-    output_plot_file_name = "duration_{0}.png".format(run_id)
+    output_plot_file_name = "duration_secs_{0}.png".format(run_id)
     output_full_path = os.path.join(output_dir, output_plot_file_name)
-    # plt.savefig(output_full_path)
+    plt.savefig(output_full_path)
 
 
 def filter_experiments_to_consider():
@@ -270,8 +277,8 @@ def filter_experiments_to_consider():
     # 12/06 00:00 to 12/08 00:00 ---> No output
     # 11/29 00:00 to 12/01 00:00 ---> Legacy sort
     # 12/21 00:00 to 12/22 00:00 ---> No output + Caching on one replica
-    start_time = datetime.strptime('2018-12-10 22:00:00', '%Y-%m-%d %H:%M:%S')
-    end_time = datetime.strptime('2018-12-11 14:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2018-11-29 00:00:00', '%Y-%m-%d %H:%M:%S')
+    end_time = datetime.strptime('2018-12-01 00:00:00', '%Y-%m-%d %H:%M:%S')
 
     experiments_to_consider = []
     all_experiments = [os.path.join(plot_one_experiment.results_base_dir, item) for item in os.listdir(plot_one_experiment.results_base_dir)
@@ -293,8 +300,9 @@ def filter_experiments_to_consider():
 
 
 if __name__ == "__main__":
-    power_plots_output_dir = 'D:\Power Measurements\PowerPlots\\12-21'
+    power_plots_output_dir = 'D:\Power Measurements\PowerPlots\\1-10'
     run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    run_type = "No output + HDFS Caching"
 
     # Get experiments to consider
     experiments_to_consider = filter_experiments_to_consider()
@@ -305,10 +313,10 @@ if __name__ == "__main__":
 
     # all_exps = set([p.experiment_id for p in all_results])
     # for exp in all_results:
-    #    print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
+       # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
+       # print("{0}".format(str(round(exp.total_power_all_nodes/3600, 2))))
 
 
-    plot_total_power_usage(run_id, all_results, power_plots_output_dir)
-    plot_total_disk_usage(run_id, all_results, power_plots_output_dir)
-    # plot_experiment_duration(run_id, all_results, power_plots_output_dir)
-
+    # plot_total_power_usage(run_id, run_type, all_results, power_plots_output_dir)
+    plot_total_disk_usage(run_id, run_type, all_results, power_plots_output_dir)
+    # plot_experiment_duration(run_id, run_type, all_results, power_plots_output_dir)

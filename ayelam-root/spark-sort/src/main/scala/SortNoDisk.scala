@@ -56,7 +56,8 @@ object SortNoDisk {
     var kv_RDD: RDD[(Array[Byte],Array[Byte])] = text_RDD.map(line => (line.slice(0,10), line.slice(10,100)))
     text_RDD.unpersist()
     text_RDD=null
-    // on aws
+
+    // Do not write output to disk
     var count = kv_RDD.sortBy(_._1, true).count()
     println("Spark output count: " + count)
   }

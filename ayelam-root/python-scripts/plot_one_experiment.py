@@ -1,5 +1,5 @@
 """
-Parses results and generated plots for a single experiment
+Parses Power, CPU, Memory and other resource usage results and plots them for a single experiment
 """
 
 import os
@@ -418,12 +418,12 @@ def parse_and_plot_results(experiment_id):
         plot_all_for_one_label(plots_dir_path, all_readings, experiment_id, experiment_setup, label_name)
 
 
-# To run for multiple experiments
+# Filter experiments to generate plots
 def filter_experiments_to_consider():
     # datetime.strptime('2018-11-29 00:00:00', '%Y-%m-%d %H:%M:%S')
     # datetime.strptime('2018-12-06 00:00:00', '%Y-%m-%d %H:%M:%S')
     # datetime.strptime('2018-12-10 00:00:00', '%Y-%m-%d %H:%M:%S')
-    start_time = datetime.strptime('2018-12-20 00:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2018-12-22 00:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
     # All experiments after start_time that doesn't already have plots_ folder.

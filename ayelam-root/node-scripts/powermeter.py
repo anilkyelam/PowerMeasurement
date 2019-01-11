@@ -1,3 +1,7 @@
+"""
+Queries the power meter every second and logs the readings
+"""
+
 import time
 import vxi11
 # import usbtmc

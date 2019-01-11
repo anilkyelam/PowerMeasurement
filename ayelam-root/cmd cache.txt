@@ -34,8 +34,10 @@ sudo -u hdfs dfs cacheadmin -removePool anil-cache-pool
 
 
 ======== HDFS Commands
-Get data block placement for a file:	 
-
+Get data block placement for a file: hdfs fsck /user/ayelam/sort_inputs/20000mb.input -files -blocks -locations
+Set replication of a file or dir: hdfs dfs -setrep 1 /user/ayelam/sort_inputs/
+Add a file with certain repl. factor: hdfs dfs -D dfs.replication=2  -put 20000mb.input /user/ayelam/sort_inputs/
+Algo to SortLegacy
 
 
 ======= Firewall ports opened
@@ -52,3 +54,8 @@ sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50070 -m connt
 sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50075 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied29
 
 
+======= Changes for Shuting's experiments
+Remove all caching stuff
+FILE_PATH_HDFS="/user/ayelam/sort_inputs/${INPUT_SIZE_MB}mb.input" in prepare_for_experiment.sh
+num-executors AND input file (/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input) in run_spark_job.sh
+limit_executors in run_experiments.py

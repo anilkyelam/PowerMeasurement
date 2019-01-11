@@ -1,5 +1,5 @@
 """
-Runs power measurement experiments on a spark cluster
+Runs power measurement experiments on the spark cluster
 """
 
 import datetime
@@ -183,7 +183,7 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
         with SCPClient(driver_ssh_client.get_transport()) as scp:
             scp.put(local_source_folder, remote_home_folder, recursive=True)
 
-            # Fix for gensort losing execute tags on copying over from windows to linux
+            # Fix for gensort file losing execute permissions on copying over from windows to linux
             remote_gensort_file_path = path_to_linux_style(os.path.join(source_code_folder_path, "gensort"))
             driver_ssh_client.exec_command("chmod +x {0}".format(remote_gensort_file_path))
 
@@ -260,23 +260,25 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
 
         driver_ssh_client.close()
 
-        print("Experiment: {0} done!!",format(experiment_id))
+        print("Experiment: {0} done!!".format(experiment_id))
         return experiment_id
     except:
-        print("Experiment: {0} failed!!",format(experiment_id))
+        print("Experiment: {0} failed!!".format(experiment_id))
         print(traceback.format_exc())
         return None
 
 
 def main():
-    scala_class_name = "SortNoDisk"
+    scala_class_name = "SortLegacy"
+    # scala_class_name = "SortNoDisk"
+
     # input_sizes_mb = [50000]
     # link_bandwidth_mbps = [200, 400, 600, 800, 1000]
     # iterations = range(1, 4)
 
     input_sizes_mb = [128000]
     link_bandwidth_mbps = [1024]
-    iterations = range(1, 10)
+    iterations = range(1, 11)
 
     # run_experiment(input_size_gb=10, link_bandwidth_mbps=500)
     for input_size_mb in input_sizes_mb:
@@ -284,7 +286,7 @@ def main():
             for _ in iterations:
                 print("Running experiment: {0}, {1}".format(input_size_mb, link_bandwidth))
                 run_experiment(scala_class_name, int(input_size_mb), link_bandwidth, limit_executors=True)
-                time.sleep(30*)
+                time.sleep(1000)
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 """
-Utility script to run a custom command on all nodes
+Utility script to run a custom command on all nodes (like pssh)
 """
 
 import paramiko
@@ -7,7 +7,8 @@ import paramiko
 # Command to run
 command = "tc qdisc show  dev eth0"
 
-spark_nodes = ["ccied21", "ccied22", "ccied23", "ccied24", "ccied25", "ccied26", "ccied27", "ccied28", "ccied29"]
+old_spark_nodes = ["ccied21", "ccied22", "ccied23", "ccied24", "ccied25", "ccied26", "ccied27", "ccied28", "ccied29"]
+new_spark_nodes = ["b09-40", "b09-38", "b09-36", "b09-34", "b09-32", "b09-30"]
 spark_nodes_dns_suffx = "sysnet.ucsd.edu"
 
 
@@ -51,11 +52,11 @@ def reset_network_rate_limit(ssh_client, password_for_sudo):
 
 # Utility to run a custom script on all the spark nodes
 def run_script():
-    user_password_info = open("user_pass.txt").readline()   # One line in <user>;<password> format.
+    user_password_info = open("user.pass").readline()   # One line in <user>;<password> format.
     user_name = user_password_info.split(";")[0]
     password = user_password_info.split(";")[1]
 
-    for node_name in spark_nodes:
+    for node_name in old_spark_nodes:
         node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
         ssh_client = create_ssh_client(node_full_name, 22, user_name, password)
 
@@ -63,7 +64,10 @@ def run_script():
         stdin, stdout, stderr = ssh_client.exec_command("echo $HOSTNAME")
         print(stdout.readlines())
 
-        # set_network_rate_limit(ssh_client, 300, password)
+        # stdin, stdout, stderr = ssh_client.exec_command("java --version")
+        # print(stdout.readlines())
+
+        # set_network_rate_limit(ssh_client, 500, password)
         reset_network_rate_limit(ssh_client, password)
 
         # print("=====================================================")

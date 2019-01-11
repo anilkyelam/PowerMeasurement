@@ -1,5 +1,5 @@
 """
-To filter experiments based on some setup parameters
+Filters experiments from the results folder based on some setup parameters
 """
 
 

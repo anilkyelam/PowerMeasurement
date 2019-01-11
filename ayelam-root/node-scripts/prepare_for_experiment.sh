@@ -4,21 +4,21 @@ hdfs dfs -rm -r -f /user/ayelam/sort_outputs/*
 
 # Get inputs and validate them
 SRC_DIR_FULL_PATH=$1
-INPUT_SIZE_MB=$2
+SIZE_IN_MB=$2
 
 if [ -z "$SRC_DIR_FULL_PATH" ]
 then
         echo "Please provide directory of source/script files"
         exit -1
 fi
-if [ -z "$INPUT_SIZE_MB" ]
+if [ -z "$SIZE_IN_MB" ]
 then
         echo "Please provide required size of input file in MB"
         exit -1
 fi
 
 echo "Checking if required input file exists"
-FILE_PATH_HDFS="/user/ayelam/sort_inputs/${INPUT_SIZE_MB}mb.input"
+FILE_PATH_HDFS="/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input"
 hdfs dfs -test -e ${FILE_PATH_HDFS}
 if [ $? != 0 ]; then
    echo "Input file not found, creating it".
