@@ -11,6 +11,9 @@ nohup spark2-submit --master yarn --num-executors 1500 --packages ch.cern.sparkm
 	--class edu.uscd.sysnet.sort.sortBytesScala target/scala-2.11/sortbytesscala_2.11-1.2.0.jar \
 	/user/shw328/${SIZE}gb.input /user/ayelam/sort_outputs/${SIZE}gb_output /user/ayelam/sort_outputs/taskstats_${unixstamp} > spark_${SIZE}gb_${unixstamp}.log 2>&1 &
 		
+
+spark-submit --class PowerMeasurements.SortLegacy target/scala-2.11/sparksort_2.11-0.1.jar yarn /user/ayelam/1000mb.input /user/ayelam/1000mb.output /user/ayelam/taskstats_${unixstamp}
+
 		
 ======== Local Spark Commands
 spark-submit --class PowerMeasurements.SortNoDisk "D:\SparkSort\target\scala-2.11\sparksort_2.11-0.1.jar" local "D:\SparkSort\input\100mb.input" 
@@ -40,6 +43,8 @@ Add a file with certain repl. factor: hdfs dfs -D dfs.replication=2  -put 20000m
 Algo to SortLegacy
 
 
+hdfs dfs -setrep 3 /user/ayelam/sort_inputs/
+
 ======= Firewall ports opened
 50070 - HDFS namenode
 50075 - HDFS data node
@@ -59,3 +64,15 @@ Remove all caching stuff
 FILE_PATH_HDFS="/user/ayelam/sort_inputs/${INPUT_SIZE_MB}mb.input" in prepare_for_experiment.sh
 num-executors AND input file (/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input) in run_spark_job.sh
 limit_executors in run_experiments.py
+
+
+
+======== Experiments 
+    # 12/10 22:00 to 12/11 14:00        ---> No output (Caching, 3 replicas)
+    # 12/06 00:00 to 12/08 00:00        ---> No output (No caching, 3 replicas)
+    # 11/29 00:00 to 12/01 00:00        ---> Legacy sort (3 replicas)
+    # 2019/01/15 11:00 to 01/17 15:00   ---> Legacy sort (No Trash, one replica)
+    # 12/21 00:00 to 12/22 00:00        ---> No output (Caching, one replica)
+    # 2019/01/17 20:00 to - 01/18 13:00 ---> No output (No Trash, one replica, more steps)
+    # 2019/01/18 14:00:00 to - 2019-01-20 00:00:00 ---> No output (Caching, one replica, No Trash, more steps)
+    # 2019-01-20 23:00:00 to                ---> Legacy sort (No Trash, 3 replicas)

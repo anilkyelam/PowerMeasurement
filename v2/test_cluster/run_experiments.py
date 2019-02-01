@@ -1,5 +1,5 @@
 """
-Runs power measurement experiments on the spark cluster
+Runs power measurement experiments on the spark test cluster
 """
 
 import datetime
@@ -9,7 +9,6 @@ import time
 import json
 import traceback
 from scp import SCPClient
-import plot_one_experiment
 
 
 # Experimental Setup constants - rarely vary across experiments
@@ -17,7 +16,7 @@ spark_nodes = ["ccied21", "ccied22", "ccied23", "ccied24", "ccied25", "ccied26",
 spark_nodes_dns_suffx = "sysnet.ucsd.edu"
 designated_driver_node = "ccied21"
 power_meter_nodes_in_order = ["ccied21", "ccied22", "ccied23", "ccied24"]
-padding_in_secs = 0
+padding_in_secs = 60
 
 
 # Since we are dealing with Windows local machine and Linux remote machines
@@ -35,8 +34,8 @@ source_code_folder_path = path_to_linux_style(os.path.join(remote_home_folder, s
 
 
 # Local node constants
-local_source_folder = "D:\Git\PowerMeasurement\\ayelam-root\\node-scripts"
-local_results_folder = "D:\Power Measurements"
+local_source_folder = 'D:\Git\PowerMeasurement\\v2\\test_cluster\\node-scripts'
+local_results_folder = 'D:\Power Measurements'
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
 stop_sar_readings_file = 'stop_sar_readings.sh'
@@ -68,10 +67,14 @@ def create_folder_if_not_exists(ssh_client, remote_folder_path):
 
 
 # Cleanup to perform before experiment
-def prepare_env_for_experiment(ssh_client, input_size_mb):
+def prepare_env_for_experiment(ssh_client, password_for_sudo, input_size_mb, cache_hdfs_file):
     print("Preparing env for experiment")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, prepare_for_experiment_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2}'.format(script_file, source_code_folder_path, input_size_mb))
+    run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
+    _, stdout, stderr = ssh_client.exec_command(run_as_sudo_prefix + 'bash {0} {1} {2} {3}'.format(script_file, 
+                                                                        source_code_folder_path,
+                                                                        input_size_mb,
+                                                                        1 if cache_hdfs_file else 0))
     print(stdout.read(), stderr.read())
 
 
@@ -79,7 +82,7 @@ def prepare_env_for_experiment(ssh_client, input_size_mb):
 def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
     print("Starting SAR readings")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, start_sar_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
+    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
     print(stdout.read(), stderr.read())
 
 
@@ -87,7 +90,7 @@ def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
 def start_power_readings(ssh_client, node_exp_folder_path):
     print("Starting power readings")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, start_power_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2}'.format(script_file, source_code_folder_path, node_exp_folder_path))
+    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2}'.format(script_file, source_code_folder_path, node_exp_folder_path))
     print(stdout.read(), stderr.read())
 
 
@@ -95,7 +98,7 @@ def start_power_readings(ssh_client, node_exp_folder_path):
 def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name, limit_executors):
     print("Starting spark job")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, run_spark_job_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1} {2} {3} {4} {5}'.format(script_file, source_code_folder_path,
+    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2} {3} {4} {5}'.format(script_file, source_code_folder_path,
                                                                                     node_exp_folder_path, input_size_mb,
                                                                                     scala_class_name,
                                                                                     1 if limit_executors else 0))
@@ -106,7 +109,7 @@ def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_n
 def stop_sar_readings(ssh_client):
     print("Stopping SAR readings")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, stop_sar_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0}'.format(script_file))
+    _, stdout, stderr = ssh_client.exec_command('bash {0}'.format(script_file))
     print(stdout.read(), stderr.read())
 
 
@@ -114,7 +117,7 @@ def stop_sar_readings(ssh_client):
 def stop_power_readings(ssh_client, node_exp_folder_path):
     print("Stopping power readings")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, stop_power_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0} {1}'.format(script_file, node_exp_folder_path))
+    _, stdout, stderr = ssh_client.exec_command('bash {0} {1}'.format(script_file, node_exp_folder_path))
     print(stdout.read(), stderr.read())
 
 
@@ -122,7 +125,7 @@ def stop_power_readings(ssh_client, node_exp_folder_path):
 def cleanup_env_post_experiment(ssh_client):
     print("Cleaning up post environment")
     script_file = path_to_linux_style(os.path.join(source_code_folder_path, cleanup_after_experiment_file))
-    _, stdout, stderr = ssh_client.exec_command('sh {0}'.format(script_file))
+    _, stdout, stderr = ssh_client.exec_command('bash {0}'.format(script_file))
     print(stdout.read(), stderr.read())
 
 
@@ -158,8 +161,19 @@ def reset_network_rate_limit(ssh_client, password_for_sudo):
     print(stdout.read(), stderr.read())
 
 
+# Clears all the data from page cache, dentries and inodes. This is to not let one experiment affect the next one due to caching.
+def clear_page_inode_dentries_cache(ssh_client, password_for_sudo):
+    print("Clearing all file data caches")
+    run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
+    cache_clear_command = "bash -c 'echo 3 > /proc/sys/vm/drop_caches'"
+
+    cmd_as_sudo = run_as_sudo_prefix + cache_clear_command
+    _, stdout, stderr = ssh_client.exec_command(cmd_as_sudo)
+    print(stdout.read(), stderr.read())
+
+
 # Prepares necessary setup to collect readings and runs spark jobs.
-def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_executors):
+def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_executors, cache_hdfs_file):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
 
@@ -188,7 +202,7 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
             driver_ssh_client.exec_command("chmod +x {0}".format(remote_gensort_file_path))
 
         # Prepare for experiment. Create input spark files if they do not exist.
-        prepare_env_for_experiment(driver_ssh_client, input_size_mb)
+        prepare_env_for_experiment(driver_ssh_client, password, input_size_mb, cache_hdfs_file)
 
         # Prepare environment and start collecting readings on each node
         for node_name in spark_nodes:
@@ -196,6 +210,9 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
             with create_ssh_client(node_full_name, 22, user_name, password) as ssh_client:
                 node_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, node_name))
                 create_folder_if_not_exists(ssh_client, node_exp_folder_path)
+
+                # Clear all kinds of file data from caches
+                clear_page_inode_dentries_cache(ssh_client, password)
 
                 # Delete any non-default qdisc and set required network rate.
                 reset_network_rate_limit(ssh_client, password)
@@ -247,7 +264,7 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
                 "LinkBandwidthMbps": link_bandwidth_mbps,
                 "PaddingInSecs": padding_in_secs,
                 "ScalaClassName": scala_class_name,
-                "InputHdfsCached": False,
+                "InputHdfsCached": True,
                 "LimitExecutors": limit_executors
             }, setup_file, indent=4, sort_keys=True)
 
@@ -269,24 +286,24 @@ def run_experiment(scala_class_name, input_size_mb, link_bandwidth_mbps, limit_e
 
 
 def main():
-    scala_class_name = "SortLegacy"
-    # scala_class_name = "SortNoDisk"
+    # scala_class_name = "SortLegacy"
+    scala_class_name = "SortNoDisk"
 
     # input_sizes_mb = [50000]
     # link_bandwidth_mbps = [200, 400, 600, 800, 1000]
     # iterations = range(1, 4)
 
-    input_sizes_mb = [128000]
-    link_bandwidth_mbps = [1024]
-    iterations = range(1, 11)
+    input_sizes_mb = [10000]
+    link_bandwidth_mbps = [200, 400, 600, 800, 1000]
+    iterations = range(1, 4)
 
-    # run_experiment(input_size_gb=10, link_bandwidth_mbps=500)
-    for input_size_mb in input_sizes_mb:
+    for iter_ in iterations:
         for link_bandwidth in link_bandwidth_mbps:
-            for _ in iterations:
-                print("Running experiment: {0}, {1}".format(input_size_mb, link_bandwidth))
-                run_experiment(scala_class_name, int(input_size_mb), link_bandwidth, limit_executors=True)
-                time.sleep(1000)
+            for input_size_mb in input_sizes_mb:
+                print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
+                run_experiment(scala_class_name, int(input_size_mb), link_bandwidth, limit_executors=True,
+                               cache_hdfs_file=False)
+                time.sleep(1*60)
 
 
 if __name__ == '__main__':

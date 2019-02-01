@@ -29,11 +29,12 @@ class ExperimentSetup:
         self.spark_job_end_time = datetime.strptime(json_dict["SparkJobEndTime"], "%Y-%m-%d %H:%M:%S")  \
             if "SparkJobEndTime" in json_dict else None
         self.input_cached_in_hdfs = json_dict["InputHdfsCached"] if "InputHdfsCached" in json_dict else None
+        self.setup_type = None
 
 
 # Results base folder
-results_base_dir = "D:\Power Measurements"
-# results_base_dir = "D:\Power Measurements\Bad Experiments"
+results_base_dir = "D:\Power Measurements\\v1"
+# results_base_dir = "D:\Power Measurements\\v1\Bad Experiments"
 setup_details_file_name = "setup_details.txt"
 cpu_readings_file_name = "cpu.sar"
 mem_readings_file_name = "memory.sar"
@@ -275,7 +276,7 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
 
 
 # Generates one plot for resource usages per node
-def plot_all_for_one_node(plots_dir_path, all_readings, experiment_id, experiment_setup, node_name):
+def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name):
 
     # Filter all readings for node
     all_readings = list(filter(lambda r: r[1] == node_name, all_readings))
@@ -332,14 +333,14 @@ def plot_all_for_one_node(plots_dir_path, all_readings, experiment_id, experimen
 
     # Save the file, should be done before show()
     output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, node_name)
-    output_full_path = os.path.join(plots_dir_path, output_plot_file_name)
+    output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
     plt.savefig(output_full_path)
     # plt.show()
     plt.close()
 
 
 # Generates one plot for resource usages on one node
-def plot_all_for_one_label(plots_dir_path, all_readings, experiment_id, experiment_setup, label_name):
+def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name):
 
     # Filter all readings for node
     all_readings = list(filter(lambda r: r[2] == label_name, all_readings))
@@ -359,7 +360,7 @@ def plot_all_for_one_label(plots_dir_path, all_readings, experiment_id, experime
 
     # Save the file, should be done before show()
     output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, label_name)
-    output_full_path = os.path.join(plots_dir_path, output_plot_file_name)
+    output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
     plt.savefig(output_full_path)
     # plt.show()
     plt.close()
@@ -389,7 +390,7 @@ def render_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot
         ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)))
 
 
-# Parse results and generate plots for one experiment
+# Parse results and generate plots for one experiment, and returns full path to the output folder
 def parse_and_plot_results(experiment_id):
     results_dir_name = experiment_id
     results_dir_path = os.path.join(results_base_dir, results_dir_name)
@@ -406,16 +407,18 @@ def parse_and_plot_results(experiment_id):
                                  output_readings_to_file=False)
 
     # Generate plots for each node
-    plots_dir_path = os.path.join(results_dir_path, plots_dir_name)
-    if not os.path.exists(plots_dir_path):
-        os.mkdir(plots_dir_path)
+    plots_dir_full_path = os.path.join(results_dir_path, plots_dir_name)
+    if not os.path.exists(plots_dir_full_path):
+        os.mkdir(plots_dir_full_path)
 
     for node_name in experiment_setup.all_spark_nodes:
-        plot_all_for_one_node(plots_dir_path, all_readings, experiment_id, experiment_setup, node_name)
+        plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name)
 
     for label_name in ('power_watts', 'cpu_total_usage', 'mem_usage_percent', 'net_in_KBps', 'net_out_KBps',
                        'disk_breads_ps', 'disk_bwrites_ps', 'spark_tasks'):
-        plot_all_for_one_label(plots_dir_path, all_readings, experiment_id, experiment_setup, label_name)
+        plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name)
+    
+    return plots_dir_full_path
 
 
 # Filter experiments to generate plots

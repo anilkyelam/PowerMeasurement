@@ -109,3 +109,6 @@ venv.bak/
 # Ignore temp folders
 Temp/
 temp/
+
+# Ignore VS Code settings
+.vscode

@@ -61,12 +61,14 @@ def get_power_usage_wh(power_log_file_path, exp_start_time, exp_end_time):
 
 
 def main():
-    base_dir = 'D:\Git\PowerMeasurement\\temp\sting_runs_1_9_500'
+    base_dir = "D:\Git\PowerMeasurement\\temp\\anil_runs_1_11"
+    # base_dir = 'D:\Git\PowerMeasurement\\temp\sting_runs_1_9_500'
     # base_dir = "D:\Git\PowerMeasurement\\temp\sting_runs_12_20"
 
     # spark_log_file_name = "spark_128gb_1545983908_1000.log"
     # power_readings_file_name = "power_1545983908_1000.txt"
 
+    last_exp_start_time = datetime.min
     for (_, _, filenames) in os.walk(base_dir):
         for file_name in filenames:
             if file_name.startswith("spark_128gb_"):
@@ -83,7 +85,16 @@ def main():
                     # hours_since_baseline = (start_time - datetime(2018, 12, 27)).total_seconds()/3600
                     spark_duration = round((end_time - start_time).seconds/60, 2)
                     power_log_duration = round((power_end - power_start).seconds/60, 2)
-                    print(start_time, end_time, spark_duration, power_log_duration, round(power_value, 2))
+
+                    # Divide sets of exp runs based on exp time
+                    if (start_time - last_exp_start_time).total_seconds() > 7200:
+                        print("=======================================================")
+                    last_exp_start_time = start_time
+
+                    # print(exp_id, link_mbps, start_time, end_time, spark_duration, power_log_duration, round(power_value, 2), sep = ", ")
+                    print(exp_id, link_mbps, start_time, end_time, spark_duration, power_log_duration, round(power_value, 2), sep = ", ")
+                    # print(round(power_value, 2))
+
 
     # parse_power_usage_across_experiments()
 
