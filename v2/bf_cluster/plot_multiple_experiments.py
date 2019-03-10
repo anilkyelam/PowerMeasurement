@@ -109,7 +109,8 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
     # Filter power readings outside of the spark job time range
     all_power_readings = list(filter(lambda r: experiment_setup.spark_job_start_time < r[0] < experiment_setup.spark_job_end_time, all_power_readings))
 
-    # Calculate total power consumed by each node, (in each spark stage) and add details to metrics
+    # Calculate total power consumed by each node, (in each spark 
+    # stage) and add details to metrics
     for node_name in experiment_setup.power_meter_nodes_in_order:
         all_readings_node = list(filter(lambda r: r[1] == node_name, all_power_readings))
         total_power_consumed = sum(map(lambda r: r[3], all_readings_node))
@@ -526,29 +527,35 @@ def plot_total_network_usage_by_input_size(run_id, exp_metrics_list, output_dir,
     plt.savefig(output_full_path)
 
 
-def plot_exp_duration_per_run_type(run_id, exp_metrics_list, output_dir, experiment_type):
+def plot_exp_duration_per_run_type(run_id, exp_metrics_list, output_dir, experiment_group):
     """
     Plots experiment duration for different input sizes from experiments of same type (same experimental setup).
     """
 
     fig, ax = plt.subplots(1,1)
-    fig.suptitle("Experiment duration ({0})".format(experiment_type))
-    ax.set_xlabel("Input Size GB")
+    fig.suptitle("Experiment duration ({0})".format(experiment_group))
+    ax.set_xlabel("Link bandwidth Mbps")
     ax.set_ylabel("Duration (secs)")
 
-    exp_metrics_list = [exp for exp in exp_metrics_list if exp.experiment_setup.setup_type == experiment_type]
+    exp_metrics_list = [exp for exp in exp_metrics_list if exp.experiment_setup.experiment_group == experiment_group]
     all_sizes = sorted(set(map(lambda r: r.input_size_gb, exp_metrics_list)))
     avg_durations = []
     std_durations = []
     for size in all_sizes:
         size_filtered = list(filter(lambda r: r.input_size_gb == size, exp_metrics_list))
-        all_exp_durations = [e.duration.total_seconds() for e in size_filtered]
-        avg_durations.append(np.mean(all_exp_durations))
-        std_durations.append(np.std(all_exp_durations))
+        all_link_rates = sorted(set(map(lambda r: r.link_bandwidth_mbps, size_filtered)))
+        avg_durations = []
+        std_durations = []
+        for link_rate in all_link_rates:
+            link_filtered = list(filter(lambda f: f.link_bandwidth_mbps == link_rate, size_filtered))
+            all_exp_durations = [e.duration.total_seconds() for e in link_filtered]
+            # avg_power_readings.append(math.log(np.mean(power_values)))
+            avg_durations.append(np.mean(all_exp_durations))
+            std_durations.append(np.std(all_exp_durations))
+        
+        ax.errorbar(all_link_rates, avg_durations, std_durations, label='Size: {0} GB'.format(size), marker="x")
 
-    ax.errorbar(all_sizes, avg_durations, std_durations, marker="x")
-
-    # plt.legend()
+    plt.legend()
     # plt.show()
 
     output_plot_file_name = "duration_{0}.png".format(run_id)
@@ -567,9 +574,9 @@ def plot_exp_duration_per_input_size(run_id, exp_metrics_list, output_dir, input
     ax.set_ylabel("Duration (secs)")
 
     exp_metrics_list = [exp for exp in exp_metrics_list if exp.input_size_gb == input_size_gb]
-    all_exp_types = sorted(set(map(lambda r: r.experiment_setup.setup_type, exp_metrics_list)))
-    for exp_type in all_exp_types:
-        exp_type_filtered = list(filter(lambda r: r.experiment_setup.setup_type == exp_type, exp_metrics_list))
+    all_exp_types = sorted(set(map(lambda r: r.experiment_setup.experiment_group, exp_metrics_list)))
+    for exp_type_id in all_exp_types:
+        exp_type_filtered = list(filter(lambda r: r.experiment_setup.experiment_group == exp_type_id, exp_metrics_list))
         # There may be multiple runs for the same setup, calculate average over those runs.
         all_link_rates = sorted(set(map(lambda r: r.link_bandwidth_mbps, exp_type_filtered)))
         avg_durations = []
@@ -580,8 +587,10 @@ def plot_exp_duration_per_input_size(run_id, exp_metrics_list, output_dir, input
             # avg_power_readings.append(math.log(np.mean(power_values)))
             avg_durations.append(np.mean(all_exp_durations))
             std_durations.append(np.std(all_exp_durations))
+            # print(input_size_gb, link_rate, all_exp_durations, round(np.mean(all_exp_durations), 2), round(np.std(all_exp_durations), 2), sep=", ")
 
-        ax.errorbar(all_link_rates, avg_durations, std_durations, label='{0}'.format(exp_type), marker="x")
+        ax.errorbar(all_link_rates, avg_durations, std_durations, label='Exp group: {0}'.format(exp_type_id), marker="x")
+    
     plt.legend()
     # plt.show()
 
@@ -590,14 +599,8 @@ def plot_exp_duration_per_input_size(run_id, exp_metrics_list, output_dir, input
     plt.savefig(output_full_path)
 
 
-# Saves the start and end times of runs with common experimental setup
-experiment_run_times_to_types = {
-    '01. Sort=Legacy, SampleRuns':  ['2019-01-30 00:00:00', None],
-}
-
-
 # Loads all experiment results
-def load_all_experiments():
+def load_all_experiments(start_time, end_time):
     experiments = []
 
     all_experiment_folders = [os.path.join(plot_one_experiment.results_base_dir, item)
@@ -605,32 +608,31 @@ def load_all_experiments():
                        if item.startswith("Exp-")
                        and os.path.isdir(os.path.join(plot_one_experiment.results_base_dir, item))]
 
-    for exp_type in experiment_run_times_to_types:
-        end_time_text = experiment_run_times_to_types[exp_type][1]
-        start_time = datetime.strptime(experiment_run_times_to_types[exp_type][0], '%Y-%m-%d %H:%M:%S')
-        end_time = datetime.strptime(end_time_text,
-                                     '%Y-%m-%d %H:%M:%S') if end_time_text is not None else datetime.now()
-
-        for experiment_dir_path in all_experiment_folders:
-            experiment_time = datetime.fromtimestamp(os.path.getctime(experiment_dir_path))
-            if start_time < experiment_time < end_time:
-                experiment_id = os.path.basename(experiment_dir_path)
-                setup_file_path = os.path.join(experiment_dir_path, "setup_details.txt")
-                experiment_setup = ExperimentSetup(setup_file_path)
-                experiment_setup.setup_type = exp_type
-                experiment_setup.experiment_id = experiment_id
-                experiments.append(experiment_setup)
+    for experiment_dir_path in all_experiment_folders:
+        experiment_time = datetime.fromtimestamp(os.path.getctime(experiment_dir_path))
+        if start_time < experiment_time < end_time:
+            experiment_id = os.path.basename(experiment_dir_path)
+            # print("Loading " + experiment_id)
+            setup_file_path = os.path.join(experiment_dir_path, "setup_details.txt")
+            experiment_setup = ExperimentSetup(setup_file_path)
+            experiment_setup.experiment_id = experiment_id
+            experiments.append(experiment_setup)
 
     return experiments
 
 
 # Filters
-power_plots_output_dir = 'D:\Power Measurements\\v2\PowerPlots\\' # + datetime.now().strftime("%m-%d")
-setup_types_filter = [
-    '01. Sort=Legacy, SampleRuns',
+power_plots_output_dir = 'D:\Power Measurements\\v2\PowerPlots\\' + datetime.now().strftime("%m-%d")
+global_start_time = datetime.strptime('2019-02-04 00:00:00', "%Y-%m-%d %H:%M:%S")
+global_end_time = datetime.now()
+experiment_groups_filter = [
+    # 4, # "First runs with TC rate-limiting"
+    "7", # "Ratelimiting for 100Gb" With more executors
+    "Run-2019-02-16-18-30-17", # Varying network rates - all CPUs working
+    "Run-2019-02-28-12-23-00", # Using Kyro serialization 
 ]
-input_sizes_filter = [10, 20, 30, 40, 50]
-link_rates_filter = [1000]
+input_sizes_filter = [100]
+link_rates_filter = [1000, 2000, 4000, 5000, 6000, 10000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
 
@@ -640,12 +642,12 @@ link_rates_filter = [1000]
 def filter_experiments_to_consider(all_experiments):
     experiments_to_consider = []
 
-    for exp_type in setup_types_filter:
+    for exp_grp_id in experiment_groups_filter:
         for experiment in all_experiments:
-            if experiment.setup_type == exp_type:
+            if experiment.experiment_group == exp_grp_id:
                 if experiment.input_size_gb in input_sizes_filter:
                     if experiment.link_bandwidth_mbps in link_rates_filter:
-                        # print(experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps)
+                        # print(experiment.input_size_gb, experiment.link_bandwidth_mbps)
                         experiments_to_consider.append(experiment)
 
     return experiments_to_consider
@@ -654,7 +656,7 @@ def filter_experiments_to_consider(all_experiments):
 def main():
 
     # Parse results
-    all_experiments = load_all_experiments()
+    all_experiments = load_all_experiments(global_start_time, global_end_time)
     relevant_experiments = filter_experiments_to_consider(all_experiments)
     all_results = [get_metrics_summary_for_experiment(exp.experiment_id, exp) for exp in relevant_experiments]
 
@@ -675,13 +677,13 @@ def main():
     # Plot experiment duration by input size
     for size in input_sizes_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+        plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
         pass
 
     # Plot experiment duration by experimental setup
-    for exp_type in setup_types_filter:
+    for exp_grp_id in experiment_groups_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        plot_exp_duration_per_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
+        # plot_exp_duration_per_run_type(run_id, all_results, power_plots_output_dir, experiment_group=exp_grp_id)
         pass
 
     # Plot power results per input size
@@ -691,7 +693,7 @@ def main():
         pass
 
     # Plot power results by experimental setup
-    for exp_type in setup_types_filter:
+    for exp_type in experiment_groups_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
         # plot_total_power_usage_per_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
         pass
@@ -703,7 +705,7 @@ def main():
         pass
 
     # Plot disk usage by experimental setup
-    for exp_type in setup_types_filter:
+    for exp_type in experiment_groups_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
         # plot_total_disk_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
         pass
@@ -715,7 +717,7 @@ def main():
         pass
 
     # Plot network usage by experimental setup
-    for exp_type in setup_types_filter:
+    for exp_type in experiment_groups_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
         # plot_total_network_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
         pass

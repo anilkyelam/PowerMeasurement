@@ -6,9 +6,6 @@ import paramiko
 from datetime import datetime
 import time
 
-# Command to run
-command = "tc qdisc show  dev eth0"
-
 new_spark_nodes = ["b09-40", "b09-38", "b09-36", "b09-34", "b09-32", "b09-30", "b09-42", "b09-44"]
 spark_nodes_dns_suffx = "sysnet.ucsd.edu"
 
@@ -22,35 +19,25 @@ def create_ssh_client(server, port, user, password):
     return client
 
 
-# Set rate limit for egress network traffic on each node
-def set_network_rate_limit(ssh_client, rate_limit_mbps, password_for_sudo):
-    print("Setting rate limit to " + rate_limit_mbps)
-    run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
-    tc_qdisc_show_command = 'tc qdisc show  dev eth0'
-    tc_qdisc_set_tbf_rate_limit = 'tc qdisc add dev eth0 root tbf rate {0}mbit burst 1mbit latency 10ms'
 
-    # Delete any non-default traffic control qdisc if it exists
-    reset_network_rate_limit(ssh_client, password_for_sudo)
+# Executes command with ssh client and reads from out and err buffers so it does not block.
+def ssh_execute_command(ssh_client, command, sudo_password = None):
+    
+    if sudo_password:
+        run_as_sudo_prefix = 'echo {0} | sudo -S '.format(sudo_password)
+        command = run_as_sudo_prefix + command
 
-    # Set the rate limit with TBF qdisc
-    set_command_with_sudo = run_as_sudo_prefix + tc_qdisc_set_tbf_rate_limit.format(rate_limit_mbps)
-    _, _, stderr = ssh_client.exec_command(set_command_with_sudo)
-    errors = str(stderr.read())
-
-    # Check if rate limiting is set.
-    stdin, stdout, stderr = ssh_client.exec_command(tc_qdisc_show_command)
-    output = stdout.read()
-    if "rate {0}Mbit".format(rate_limit_mbps) not in str(output):
-        raise Exception("Setting link bandwidth failed! " + errors)
+    _, stdout, stderr = ssh_client.exec_command(command)
+    output = str(stdout.read() + stderr.read())
+    print(output)
+    return output
 
 
-# Resets any traffic control qdisc set for a node, which then defaults to pfifo.
-def reset_network_rate_limit(ssh_client, password_for_sudo):
-    print("Resetting rate limit")
-    run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
-    tc_qdist_reset_command = 'tc qdisc del dev eth0 root'
-    cmd_as_sudo = run_as_sudo_prefix + tc_qdist_reset_command
-    ssh_client.exec_command(cmd_as_sudo)
+def create_or_reset_tmpfs_ram_disk(ssh_client, root_password):
+    mount_ram_disk_command = "mount -t tmpfs -o size=50G tmpfs /mnt/ramdisk"
+    ssh_execute_command(ssh_client, "rm -r -f /mnt/ramdisk", sudo_password=root_password)
+    ssh_execute_command(ssh_client, "mkdir /mnt/ramdisk", sudo_password=root_password)
+    ssh_execute_command(ssh_client, mount_ram_disk_command, sudo_password=root_password)
 
 
 # Utility to run a custom script on all the spark nodes
@@ -63,16 +50,10 @@ def run_script():
         node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
         ssh_client = create_ssh_client(node_full_name, 22, user_name, password)
 
-        print("=====================================================")
-        stdin, stdout, stderr = ssh_client.exec_command("echo $HOSTNAME")
-        print(stdout.readlines(), stderr.readlines())
-
-        run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password)
-        stdin, stdout, stderr = ssh_client.exec_command("hdfs version")
-        print(stdout.readlines(), stderr.readlines())
-
+        ssh_execute_command(ssh_client, "echo $HOSTNAME")
+        create_or_reset_tmpfs_ram_disk(ssh_client, password)
+        # ssh_execute_command(ssh_client, "shutdown -r", sudo_password=password)
 
 if __name__ == '__main__':
     run_script()
-    # run_sting_script()
 

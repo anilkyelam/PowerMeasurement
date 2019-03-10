@@ -547,11 +547,18 @@ def plot_exp_duration_per_run_type(run_id, exp_metrics_list, output_dir, experim
     std_durations = []
     for size in all_sizes:
         size_filtered = list(filter(lambda r: r.input_size_gb == size, exp_metrics_list))
-        all_exp_durations = [e.duration.total_seconds() for e in size_filtered]
-        avg_durations.append(np.mean(all_exp_durations))
-        std_durations.append(np.std(all_exp_durations))
+        # There may be multiple runs for the same setup, calculate average over those runs.
+        all_link_rates = sorted(set(map(lambda r: r.link_bandwidth_mbps, size_filtered)))
+        avg_durations = []
+        std_durations = []
+        for link_rate in all_link_rates:
+            link_filtered = list(filter(lambda f: f.link_bandwidth_mbps == link_rate, size_filtered))
+            all_exp_durations = [e.duration.total_seconds() for e in link_filtered]
+            # avg_power_readings.append(math.log(np.mean(power_values)))
+            avg_durations.append(np.mean(all_exp_durations))
+            std_durations.append(np.std(all_exp_durations))
 
-    ax.errorbar(all_sizes, avg_durations, std_durations, marker="x")
+        ax.errorbar(all_link_rates, avg_durations, std_durations, label='{0} GB'.format(size), marker="x")
 
     # plt.legend()
     # plt.show()
@@ -645,7 +652,7 @@ def load_all_experiments():
 power_plots_output_dir = 'D:\Power Measurements\\v1\PowerPlots\\' + datetime.now().strftime("%m-%d") # + "\\hdfs-caching"
 setup_types_filter = [
     # '01. Sort=Legacy,   Caching=No,  Replicas=3, Trash=Yes',
-    '05. Sort=Legacy,   Caching=No,  Replicas=1, Trash=No ',
+    # '05. Sort=Legacy,   Caching=No,  Replicas=1, Trash=No ',
     # '08. Sort=Legacy,   Caching=no,  Replicas=3, Trash=No ',
     # '02. Sort=NoOutput, Caching=No,  Replicas=3, Trash=NA ',
     # '03. Sort=NoOutput, Caching=Yes, Replicas=3, Trash=NA ',
@@ -654,12 +661,12 @@ setup_types_filter = [
     # '07. Sort=NoOutput, Caching=Yes, Replicas=1, Trash=NA ',
     # '09. Sort=NoOut,hdfsCach=N,Rep=1,PgCach=N',
     # '10. Sort=NoOut,hdfsCach=N,Rep=1,PgCach=N,DataPl=R',
-    # '11. Sort=NoOut,hdfsCach=N,Rep=1,PgCach=N,DataPl=R',
+    '11. Sort=NoOut,hdfsCach=N,Rep=1,PgCach=N,DataPl=R',
     # '12. Sort=NoOut,hdfsCach=Y,Rep=1,PgCach=N,DataPl=R',
     # '13. Sort=NoOut,hdfsCach=N,Rep=1,PgCach=N,DataPl=R,10GB',
 ]
 input_sizes_filter = [10, 20, 30, 40, 50]
-link_rates_filter = [1000]
+link_rates_filter = [200, 400, 600, 800, 1000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
 
@@ -740,7 +747,7 @@ def main():
     # Plot experiment duration by input size
     for size in input_sizes_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+        plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
         pass
 
     # Plot experiment duration by experimental setup

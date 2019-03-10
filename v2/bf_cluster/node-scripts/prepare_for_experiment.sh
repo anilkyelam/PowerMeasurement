@@ -63,8 +63,8 @@ if [ "${CACHE_HDFS_FILE}" == 1 ]; then
 	hdfs cacheadmin -listDirectives | grep "${FILE_PATH_HDFS}"
 	if [ $? != 0 ]; then
 		echo "File not in cache, refreshing the cache and adding the file"
-		sudo -u hdfs hdfs cacheadmin -removeDirectives -path "/user/ayelam"
-		sudo -u hdfs hdfs cacheadmin -addDirective -path "${FILE_PATH_HDFS}" -pool anil-cache-pool
+		hdfs cacheadmin -removeDirectives -path "/user/ayelam"
+		hdfs cacheadmin -addDirective -path "${FILE_PATH_HDFS}" -pool cache-pool
 		
 		# This initiates caching process. Ideally we would want to wait and check until it finishes, but for now
 		# we just wait and hope that it's done. (TODO: Configure this time for larger inputs)

@@ -7,6 +7,7 @@ import paramiko
 import os
 import time
 import json
+import sys
 import traceback
 from scp import SCPClient
 
@@ -18,6 +19,16 @@ designated_spark_driver_node = "b09-40"
 designated_hdfs_master_node = "b09-40"
 power_meter_nodes_in_order = []
 padding_in_secs = 60
+fat_tree_ip_mac_map = {
+    "b09-40": ("ec:0d:9a:68:21:c8", "10.0.0.1"),
+    "b09-38": ("ec:0d:9a:68:21:c4", "10.0.1.1"),
+    "b09-44": ("ec:0d:9a:68:21:a4", "10.1.0.1"),
+    "b09-42": ("ec:0d:9a:68:21:ac", "10.1.1.1"),
+    "b09-34": ("ec:0d:9a:68:21:a8", "10.2.0.1"),
+    "b09-36": ("ec:0d:9a:68:21:a0", "10.2.1.1"),
+    "b09-30": ("ec:0d:9a:68:21:b0", "10.3.0.1"),
+    "b09-32": ("ec:0d:9a:68:21:84", "10.3.1.1"),
+}
 
 
 # Since we are dealing with Windows local machine and Linux remote machines
@@ -49,10 +60,6 @@ cleanup_after_experiment_file = 'cleanup_after_experiment.sh'
 run_spark_job_file = 'run_spark_job.sh'
 
 
-# Other constants
-run_as_sudo_prefix = 'echo {0} | sudo -S '
-
-
 # Creates SSH client using paramiko lib.
 def create_ssh_client(server, port, user, password):
     client = paramiko.SSHClient()
@@ -60,6 +67,19 @@ def create_ssh_client(server, port, user, password):
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(server, port, user, password)
     return client
+
+
+# Executes command with ssh client and reads from out and err buffers so it does not block.
+def ssh_execute_command(ssh_client, command, sudo_password = None):
+    
+    if sudo_password:
+        run_as_sudo_prefix = 'echo {0} | sudo -S '.format(sudo_password)
+        command = run_as_sudo_prefix + command
+
+    _, stdout, stderr = ssh_client.exec_command(command)
+    output = str(stdout.read() + stderr.read())
+    # print(output)
+    return output
 
 
 # Create remote folder if it does not exist
@@ -71,36 +91,39 @@ def create_folder_if_not_exists(ssh_client, remote_folder_path):
             ftp_client.mkdir(remote_folder_path)
 
 
-# Cutomizes hosts files on all nodes to get all the traffic going through the barefoot switch.
-def set_up_hosts_files(root_user_name, password, current_toplogy_hosts_file_name):
+# Sets up each node - adding hosts files, setting IP address, ARP entries, etc.
+def set_up_on_each_node(root_user_name, password, current_toplogy_hosts_file_name):
 
-    # Setting up network for different topologies to ensure all traffic flows through barefoot switch
-    # Copy all hosts files from scripts folder to /etc/ on each node
-    # Take a snapshot of /etc/hosts file to revert the changes it after experiments are done
-    # Also adding these timed snapshots to hosts_snapshots folder, just in case
     for node_name in spark_nodes:
         node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-        print("Setting up hosts file on " + node_full_name)
 
-        with create_ssh_client(node_full_name, 22, root_user_name, password) as ssh_client:
-            sudo_prefix = run_as_sudo_prefix.format(password)
+        with create_ssh_client(node_full_name, 22, root_user_name, password) as ssh_client:    
+            print("Setting up hosts file on " + node_full_name)
             script_file = path_to_linux_style(os.path.join(remote_scripts_folder, hosts_setup_file))
-            _, stdout, stderr = ssh_client.exec_command(sudo_prefix + 'sh {0} {1} {2}'.format(
-                script_file, remote_scripts_folder, current_toplogy_hosts_file_name))
-            print(stdout.read(), stderr.read())
+            ssh_execute_command(ssh_client, 'sh {0} {1} {2}'.format(script_file, remote_scripts_folder, current_toplogy_hosts_file_name),
+                                    sudo_password=password)
+
+            print("Setting IP address and adding ARP entries on " + node_name)
+            set_ip_address = ["ifconfig enp101s0 '{0}' netmask 255.0.0.0".format(fat_tree_ip_mac_map[node_name][1])]
+            set_arp_table_entries = ["arp -s {0} {1}".format(fat_tree_ip_mac_map[node][1], fat_tree_ip_mac_map[node][0]) 
+                                            for node in fat_tree_ip_mac_map.keys() if node != node_name]
+            for cmd in (set_ip_address + set_arp_table_entries):
+                ssh_execute_command(ssh_client, cmd, sudo_password=password)
 
 
-# Reverts changes to hosts file on all nodes
-def clean_up_hosts_files(root_user_name, password):
+# Reverts changes on each node - cleanup to hosts file on all nodes, resets TC, refreshes link interface, etc.
+def clean_up_on_each_node(root_user_name, password):
     for node_name in spark_nodes:
         node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-        print("Cleaning up hosts file on " + node_full_name)
-
         with create_ssh_client(node_full_name, 22, root_user_name, password) as ssh_client:
-            sudo_prefix = run_as_sudo_prefix.format(password)
+            
+            print("Cleaning up hosts file on " + node_full_name)
             script_file = path_to_linux_style(os.path.join(remote_scripts_folder, hosts_cleanup_file))
-            _, stdout, stderr = ssh_client.exec_command(sudo_prefix + 'sh {0}'.format(script_file))
-            print(stdout.read(), stderr.read())
+            ssh_execute_command(ssh_client, 'sh {0}'.format(script_file), sudo_password=password)
+             
+            print("Resetting TC and network interface on " + node_full_name)
+            reset_network_rate_limit(ssh_client, password)
+            refresh_link_interface(ssh_client, password)
 
 
 # Starts HDFS + YARN cluster for spark runs
@@ -108,78 +131,116 @@ def start_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
     print("Starting hdfs and yarn cluster")
     master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
-    _, stdout, stderr = master_node_ssh_client.exec_command("bash hadoop/sbin/start-dfs.sh && bash hadoop/sbin/start-yarn.sh")
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(master_node_ssh_client, "bash hadoop/sbin/start-dfs.sh && bash hadoop/sbin/start-yarn.sh")
+
+    # Check if the cluster is up and running properly i.e., all the data nodes are up
+    output = ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs dfsadmin -report")
+    errors = ["Node {0} not found in the cluster report\n".format(node_name) for node_name in spark_nodes 
+        if node_name != designated_hdfs_master_node and node_name not in output] 
+    if errors.__len__() > 0:
+        print(errors)
+        raise Exception("Cluster is not configured properly!")
+    print ("Cluster is up and running!")
 
 
 # Starts HDFS + YARN cluster for spark runs
 def stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
-    print("Stopping hdfs and yarn cluster")
+    # Remove cache directives so that when HDFS starts up again, your prepare_env_script doesn't think the file is already in cache
+    print("Removing hdfs cache directives of input files")
     master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
-    _, stdout, stderr = master_node_ssh_client.exec_command("bash hadoop/sbin/stop-dfs.sh && bash hadoop/sbin/stop-yarn.sh")
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs cacheadmin -removeDirectives -path '/user/ayelam'")
+
+    print("Stopping hdfs and yarn cluster")
+    ssh_execute_command(master_node_ssh_client, "bash hadoop/sbin/stop-yarn.sh && bash hadoop/sbin/stop-dfs.sh")
 
 
 # Set up environment for each experiment
 def prepare_env_for_experiment(ssh_client, password_for_sudo, input_size_mb, cache_hdfs_file):
     print("Preparing env for experiment")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, prepare_for_experiment_file))
-    # run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
-    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2} {3}'.format(script_file, 
-                                                                        remote_scripts_folder,
-                                                                        input_size_mb,
-                                                                        1 if cache_hdfs_file else 0))
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3}'.format(script_file, remote_scripts_folder,
+                                                                    input_size_mb, 1 if cache_hdfs_file else 0))
 
 
 # Starts SAR readings
 def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
     print("Starting SAR readings")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, start_sar_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(ssh_client, 'bash {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
 
 
 # Starts spark job with specified algorithm (scala class name) and input size.
 def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name):
     print("Starting spark job")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, run_spark_job_file))
-    _, stdout, stderr = ssh_client.exec_command('bash {0} {1} {2} {3} {4}'.format(script_file, remote_scripts_folder, node_exp_folder_path, 
+    ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3} {4}'.format(script_file, remote_scripts_folder, node_exp_folder_path, 
                                                                                 input_size_mb, scala_class_name))
-    print(stdout.read(), stderr.read())
 
 
 # Stops SAR readings
 def stop_sar_readings(ssh_client):
     print("Stopping SAR readings")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, stop_sar_readings_file))
-    _, stdout, stderr = ssh_client.exec_command('bash {0}'.format(script_file))
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(ssh_client, 'bash {0}'.format(script_file))
 
 
 # Cleans up each node after experiment
 def cleanup_env_post_experiment(ssh_client):
     print("Cleaning up post environment")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, cleanup_after_experiment_file))
-    _, stdout, stderr = ssh_client.exec_command('bash {0}'.format(script_file))
-    print(stdout.read(), stderr.read())
+    ssh_execute_command(ssh_client, 'bash {0}'.format(script_file))
 
 
 # Clears all the data from page cache, dentries and inodes. This is to not let one experiment affect the next one due to caching.
 def clear_page_inode_dentries_cache(ssh_client, password_for_sudo):
     print("Clearing all file data caches")
-    run_as_sudo_prefix = 'echo {0} | sudo -S '.format(password_for_sudo)
     cache_clear_command = "bash -c 'echo 3 > /proc/sys/vm/drop_caches'"
+    ssh_execute_command(ssh_client, cache_clear_command, sudo_password=password_for_sudo)
 
-    cmd_as_sudo = run_as_sudo_prefix + cache_clear_command
-    _, stdout, stderr = ssh_client.exec_command(cmd_as_sudo)
-    print(stdout.read(), stderr.read())
+
+# Set rate limit for egress network traffic on each node
+def set_network_rate_limit(ssh_client, rate_limit_mbps, password_for_sudo):
+
+    if rate_limit_mbps == 0:
+        print("Not setting any network rate limit")
+        return
+
+    # Set the rate limit with TBF qdisc
+    print("Setting network rate limit to {0} mbps".format(rate_limit_mbps))
+    tc_qdisc_set_tbf_rate_limit = 'tc qdisc add dev enp101s0 root tbf rate {0}mbit burst 1mbit latency 10ms'
+    ssh_execute_command(ssh_client, tc_qdisc_set_tbf_rate_limit.format(rate_limit_mbps), sudo_password=password_for_sudo)
+
+    # Check if rate limiting is properly set.
+    tc_qdisc_show_command = 'tc qdisc show  dev enp101s0'
+    output = ssh_execute_command(ssh_client, tc_qdisc_show_command)
+    token_rate_text = "rate {0}Mbit".format(rate_limit_mbps) if rate_limit_mbps % 1000 != 0 \
+        else "rate {0}Gbit".format(int(rate_limit_mbps/1000))
+    if "tbf" not in output or token_rate_text not in output:
+        raise Exception("Setting link bandwidth failed!")
+
+
+# Resets any traffic control qdisc set for a node, which then defaults to pfifo.
+def reset_network_rate_limit(ssh_client, password_for_sudo):
+    print("Resetting network rate limit, deleting any custom qdisc")
+    tc_qdist_reset_command = 'tc qdisc del dev enp101s0 root'
+    ssh_execute_command(ssh_client, tc_qdist_reset_command, sudo_password=password_for_sudo)
+
+
+# Refreshes interface (Reloads the NIC driver?), clears up any mess that TC makes  
+def refresh_link_interface(ssh_client, password_for_sudo):
+    print("Refreshing the link interface")
+    set_if_down_command = 'ip link set enp101s0 down'
+    set_if_up_command = 'ip link set enp101s0 up'
+
+    ssh_execute_command(ssh_client, set_if_down_command, sudo_password=password_for_sudo)
+    ssh_execute_command(ssh_client, set_if_up_command, sudo_password=password_for_sudo)
 
 
 # Runs a single experiment with specific configurations like input size, network rate, etc.
 # Prepares necessary setup to collect readings and runs spark jobs.
-def run_experiment(scala_class_name, user_name, user_password, input_size_mb, link_bandwidth_mbps, cache_hdfs_file):
+def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_password, input_size_mb, 
+                    link_bandwidth_mbps, cache_hdfs_file):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
 
@@ -194,7 +255,6 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
         # Make sure directory structure exists in NFS home folder
         create_folder_if_not_exists(driver_ssh_client, experiment_folder_path)
 
-
         # Prepare for experiment. Create input spark files if they do not exist.
         prepare_env_for_experiment(driver_ssh_client, user_password, input_size_mb, cache_hdfs_file)
 
@@ -202,6 +262,7 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
         for node_name in spark_nodes:
             node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
             with create_ssh_client(node_full_name, 22, user_name, user_password) as ssh_client:
+                print("Setting up for Spark Job on node " + node_name)
                 node_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, node_name))
                 create_folder_if_not_exists(ssh_client, node_exp_folder_path)
 
@@ -209,8 +270,8 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
                 clear_page_inode_dentries_cache(ssh_client, user_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                # reset_network_rate_limit(ssh_client, password)
-                # set_network_rate_limit(ssh_client, link_bandwidth_mbps, password)
+                reset_network_rate_limit(ssh_client, user_password)
+                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
 
                 start_sar_readings(ssh_client, node_exp_folder_path)
 
@@ -236,8 +297,8 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
         # Stop collecting SAR readings on each node
         for node_name in spark_nodes:
             node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-            ssh_client = create_ssh_client(node_full_name, 22, user_name, user_password)
-            stop_sar_readings(ssh_client)
+            with create_ssh_client(node_full_name, 22, user_name, user_password) as ssh_client:
+                stop_sar_readings(ssh_client)
 
         # Copy results to local machine
         with SCPClient(driver_ssh_client.get_transport()) as scp:
@@ -248,8 +309,8 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
         setup_file = open(os.path.join(local_experiment_folder, "setup_details.txt"), "w")
         json.dump(
             {
-                "ExperimentGroup": 1,
-                "ExperimentGroupDesc": "First sample runs on bf cluster",
+                "ExperimentGroup": exp_run_id,
+                "ExperimentGroupDesc": exp_run_desc,
                 "ScalaClassName": scala_class_name,
                 "InputHdfsCached": cache_hdfs_file,
                 
@@ -268,11 +329,6 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
 
         # Cleanup on each node
         cleanup_env_post_experiment(driver_ssh_client)
-        for node_name in spark_nodes:
-            node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-            # with create_ssh_client(node_full_name, 22, user_name, password) as ssh_client:
-            #     reset_network_rate_limit(ssh_client, password)
-
         driver_ssh_client.close()
 
         print("Experiment: {0} done!!".format(experiment_id))
@@ -285,12 +341,13 @@ def run_experiment(scala_class_name, user_name, user_password, input_size_mb, li
 
 # Main
 def main():
-    scala_class_name = "SortLegacy"
-    # scala_class_name = "SortNoDisk"
+    # scala_class_name = "SortLegacy"
+    scala_class_name = "SortNoDisk"
 
-    input_sizes_mb = [10000, 20000, 30000, 40000, 50000]
-    link_bandwidth_mbps = []
-    iterations = range(1, 4)
+    input_sizes_mb = [100000]
+    link_bandwidth_mbps = [0] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+    iterations = range(1, 2)
+    cache_hdfs_input = True
 
     # Get user creds from temp files
     root_user_password_info = open("root-user.pass").readline()  # One line in <user>;<password> format.
@@ -299,6 +356,10 @@ def main():
     hadoop_user_password_info = open("hadoop-user.pass").readline()  # One line in <user>;<password> format.
     hadoop_user_name = hadoop_user_password_info.split(";")[0]
     hadoop_password = hadoop_user_password_info.split(";")[1]
+
+    # Command line arguments
+    exp_run_id = "Run-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    exp_run_desc = sys.argv[1]
 
     master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, root_user_name, root_password)
@@ -317,29 +378,32 @@ def main():
             master_node_ssh_client.exec_command("chmod +x {0}".format(remote_gensort_file_path))
 
         # Set up environment for experiments
-        set_up_hosts_files(root_user_name, root_password, fat_tree_hosts_file_name)
+        set_up_on_each_node(root_user_name, root_password, fat_tree_hosts_file_name)
         start_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+        input("Press [Enter] to continue.")
 
         # Run all experiments
         for iter_ in iterations:
             for link_bandwidth in link_bandwidth_mbps:
                 for input_size_mb in input_sizes_mb:
                     print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
-                    run_experiment(scala_class_name, root_user_name, root_password, int(input_size_mb), 
-                        link_bandwidth, cache_hdfs_file=False)
+                    run_experiment(exp_run_id, exp_run_desc, scala_class_name, root_user_name, root_password, 
+                        int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
                     # time.sleep(1*60)
-
-        print("Environment set up and cluster started!")
 
     finally:
         # Clean up
-        print("Tear down environment? Press [Enter] to continue.")
-        input()
-        print("Tearing down the environment...")
-        
+        while True:
+            resp = input("Tear down environment? Press [Y] or [N] to continue.")
+            if resp.upper() == "Y":      
+                print("Tearing down the environment...")      
+                stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+                clean_up_on_each_node(root_user_name, root_password)
+                break
+            elif resp.upper() == "N":
+                break
+
         master_node_ssh_client.close()
-        stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
-        clean_up_hosts_files(root_user_name, root_password)
 
 
 if __name__ == '__main__':

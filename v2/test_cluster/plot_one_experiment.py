@@ -14,7 +14,13 @@ import traceback as tc
 
 # Experiment setup class
 class ExperimentSetup:
+    all_spark_nodes = None
+    power_meter_nodes_in_order = None
+
     def __init__(self, setup_file_path):
+        if setup_file_path is None:
+            return
+
         # Parse experimental setup from setup file
         json_dict = json.load(open(setup_file_path, "r"))
         self.all_spark_nodes = json_dict["AllSparkNodes"]

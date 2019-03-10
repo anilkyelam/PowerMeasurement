@@ -22,14 +22,14 @@ class ExperimentSetup:
         self.power_meter_nodes_in_order = json_dict["PowerMeterNodesInOrder"]
         self.input_size_gb = json_dict["InputSizeGb"]
         self.link_bandwidth_mbps = float(json_dict["LinkBandwidthMbps"])
-        self.experiment_start_time = datetime.strptime(json_dict["ExperimentStartTime"], "%Y-%m-%d %H:%M:%S") \
-            if "ExperimentStartTime" in json_dict else None
-        self.spark_job_start_time = datetime.strptime(json_dict["SparkJobStartTime"], "%Y-%m-%d %H:%M:%S") \
-            if "SparkJobStartTime" in json_dict else None
-        self.spark_job_end_time = datetime.strptime(json_dict["SparkJobEndTime"], "%Y-%m-%d %H:%M:%S")  \
-            if "SparkJobEndTime" in json_dict else None
+        self.experiment_start_time = datetime.strptime(json_dict["ExperimentStartTime"], "%Y-%m-%d %H:%M:%S")
+        self.spark_job_start_time = datetime.strptime(json_dict["SparkJobStartTime"], "%Y-%m-%d %H:%M:%S")
+        self.spark_job_end_time = datetime.strptime(json_dict["SparkJobEndTime"], "%Y-%m-%d %H:%M:%S")
+        
+        self.experiment_group = str(json_dict["ExperimentGroup"])
+        self.experiment_group_desc = json_dict["ExperimentGroupDesc"]
+        self.scala_class_name = json_dict["ScalaClassName"]
         self.input_cached_in_hdfs = json_dict["InputHdfsCached"] if "InputHdfsCached" in json_dict else None
-        self.setup_type = None
 
 
 # Results base folder
@@ -220,55 +220,54 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
 
     # Parse power measurements and attribute them to each node connected to power meter
     designated_driver_results_path = os.path.join(results_dir_path, experiment_setup.designated_driver_node)
-    '''
     power_full_path = os.path.join(designated_driver_results_path, power_readings_file_name)
 
-    with open(power_full_path, "r") as lines:
-        for line in lines:
-            matches = re.match(power_regex, line)
-            if matches:
-                timestamp = datetime.fromtimestamp(float(matches.group(1)))
+    if os.path.exists(power_full_path):
+        with open(power_full_path, "r") as lines:
+            for line in lines:
+                matches = re.match(power_regex, line)
+                if matches:
+                    timestamp = datetime.fromtimestamp(float(matches.group(1)))
 
-                i = 0
-                for node_name in experiment_setup.power_meter_nodes_in_order:
-                    power_watts = float(matches.group(i + 2))
-                    all_readings.append([timestamp.replace(microsecond=0), node_name, "power_watts", power_watts])
-                    i += 1
-
-    '''
+                    i = 0
+                    for node_name in experiment_setup.power_meter_nodes_in_order:
+                        power_watts = float(matches.group(i + 2))
+                        all_readings.append([timestamp.replace(microsecond=0), node_name, "power_watts", power_watts])
+                        i += 1
 
     # Parse spark log
     spark_log_full_path = os.path.join(designated_driver_results_path, spark_log_file_name)
     task_counter = dict.fromkeys(experiment_setup.all_spark_nodes, 0)
 
-    with open(spark_log_full_path, "r") as lines:
-        for line in lines:
-            matches = re.match(spark_stage_and_task_log_regex, line)
-            if matches:
-                time_string = matches.group(1)
-                timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-                stage = float(matches.group(2))
-                node_name = matches.group(3)
+    if os.path.exists(spark_log_full_path):
+        with open(spark_log_full_path, "r") as lines:
+            for line in lines:
+                matches = re.match(spark_stage_and_task_log_regex, line)
+                if matches:
+                    time_string = matches.group(1)
+                    timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+                    stage = float(matches.group(2))
+                    node_name = matches.group(3)
 
-                # If only results from subset of the nodes are available (rare case)
-                if node_name not in experiment_setup.all_spark_nodes:
-                    continue
+                    # If only results from subset of the nodes are available (rare case)
+                    if node_name not in experiment_setup.all_spark_nodes:
+                        continue
 
-                if "Starting task" in line:
-                    task_counter[node_name] += 1
-                else:
-                    task_counter[node_name] -= 1
+                    if "Starting task" in line:
+                        task_counter[node_name] += 1
+                    else:
+                        task_counter[node_name] -= 1
 
-                all_readings.append([timestamp, node_name, "spark_stage", stage])
-                all_readings.append([timestamp, node_name, "spark_tasks", task_counter[node_name]])
+                    all_readings.append([timestamp, node_name, "spark_stage", stage])
+                    all_readings.append([timestamp, node_name, "spark_tasks", task_counter[node_name]])
 
-    # Add max and min timestamps for spark tasks with 0 to get the same time range in plots.
-    time_stamps = list(map(lambda r: r[0], all_readings))
-    min_time = min(time_stamps)
-    max_time = max(time_stamps)
-    for node_name in experiment_setup.all_spark_nodes:
-        all_readings.append([min_time, node_name, "spark_tasks", 0])
-        all_readings.append([max_time, node_name, "spark_tasks", 0])
+        # Add max and min timestamps for spark tasks with 0 to get the same time range in plots.
+        time_stamps = list(map(lambda r: r[0], all_readings))
+        min_time = min(time_stamps)
+        max_time = max(time_stamps)
+        for node_name in experiment_setup.all_spark_nodes:
+            all_readings.append([min_time, node_name, "spark_tasks", 0])
+            all_readings.append([max_time, node_name, "spark_tasks", 0])
 
     # Output to file
     if output_readings_to_file:
@@ -327,15 +326,15 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
                    y_label='Disk MB/sec',
                    plot_label='Writes')
     render_subplot_by_label(ax6, all_readings,
-                   filter_label='spark_stage',
-                   x_label='Time (in secs)',
-                   y_label='',
-                   plot_label='Spark stage')
-    render_subplot_by_label(ax6, all_readings,
                    filter_label='spark_tasks',
                    x_label='Time (in secs)',
                    y_label='',
                    plot_label='Number of spark tasks')
+    render_subplot_by_label(ax6, all_readings,
+                   filter_label='spark_stage',
+                   x_label='Time (in secs)',
+                   y_label='',
+                   plot_label='Spark stage')
 
     # Save the file, should be done before show()
     output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, node_name)

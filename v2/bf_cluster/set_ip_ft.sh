@@ -30,10 +30,10 @@ sleep 1
 
 for H in ${!ORDERING[@]}
 do
-    # ssh -t $USER@b09-${ORDERING[H]}.sysnet.ucsd.edu bash /home/$USER/opera/arp_tables_ft.sh
+    ssh -t $USER@b09-${ORDERING[H]}.sysnet.ucsd.edu bash /home/$USER/bf-cluster/arp_tables_ft.sh
 done
 
 for H in ${!ORDERING[@]}
 do
-    # ssh -t $USER@b09-${ORDERING[H]}.sysnet.ucsd.edu bash /home/$USER/opera/pingall.sh
+    ssh -t $USER@b09-${ORDERING[H]}.sysnet.ucsd.edu bash /home/$USER/bf-cluster/pingall.sh
 done

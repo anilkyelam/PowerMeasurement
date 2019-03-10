@@ -44,7 +44,7 @@ def get_ip_to_name_mapping(user_name, password):
 
 
 def main():
-    user_password_info = open("user.pass").readline()   # One line in <user>;<password> format.
+    user_password_info = open("root-user.pass").readline()   # One line in <user>;<password> format.
     user_name = user_password_info.split(";")[0]
     password = user_password_info.split(";")[1]
 
@@ -66,8 +66,10 @@ def main():
             if matches:
                 block_id = matches.group(1)
                 node_ip = matches.group(2)
+                # print(node_ip)
                 # node_name = ip_to_node_dict[node_ip]
-                blocks_counter[node_ip] += 1
+                node_name = [node_name for node_name, addr in run_experiments.fat_tree_ip_mac_map.items() if addr[1] == node_ip][0] 
+                blocks_counter[node_name] += 1
             else:
                 parse_for_data = False
 
