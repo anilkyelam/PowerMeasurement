@@ -332,9 +332,12 @@ sudo git clone https://github.com/apache/giraph.git
   git clone https://github.com/apache/giraph.git
   cd giraph/
   export JAVA_HOME=/usr/lib/jvm/java-1.8.0-openjdk-amd64
-  mvn -Phadoop_yarn -DskipTests -Dhadoop.version=2.8.5 clean install -Dcheckstyle.skip
-  (Needed to do a little hack of removing an option from <munge.symbols> in pom.xml for YARN, based on the below link to get compile to work: 
+  For PURE YARN: 
+  	mvn -Phadoop_yarn -DskipTests -Dhadoop.version=2.8.5 clean install -Dcheckstyle.skip
+  	(Needed to do a little hack of removing an option from <munge.symbols> in pom.xml for YARN, based on the below link to get compile to work: 
   	http://mail-archives.apache.org/mod_mbox/giraph-user/201501.mbox/%3C54B17196.4040107@hiro-tan.org%3E)
+  For MapReduce on YARN (we use this): 
+  	mvn -Phadoop_2 clean install -DskipTests -Dcheckstyle.skip
 
 3. At this point, we'll have a Giraph jar file custom built for Hadoop version, and can be executed using "hadoop jar" over MR.
 

@@ -17,23 +17,23 @@ class ExperimentSetup:
     def __init__(self, setup_file_path):
         # Parse experimental setup from setup file
         json_dict = json.load(open(setup_file_path, "r"))
-        self.all_spark_nodes = json_dict["AllSparkNodes"]
-        self.designated_driver_node = json_dict["SparkDriverNode"]
+        self.hdfs_nodes = json_dict["HdfsNodes"]
+        self.designated_driver_node = json_dict["GiraphDriverNode"]
         self.power_meter_nodes_in_order = json_dict["PowerMeterNodesInOrder"]
-        self.input_size_gb = json_dict["InputSizeGb"]
+        self.input_graph_file = json_dict["InputGraphFile"]
         self.link_bandwidth_mbps = float(json_dict["LinkBandwidthMbps"])
         self.experiment_start_time = datetime.strptime(json_dict["ExperimentStartTime"], "%Y-%m-%d %H:%M:%S")
-        self.spark_job_start_time = datetime.strptime(json_dict["SparkJobStartTime"], "%Y-%m-%d %H:%M:%S")
-        self.spark_job_end_time = datetime.strptime(json_dict["SparkJobEndTime"], "%Y-%m-%d %H:%M:%S")
+        self.job_start_time = datetime.strptime(json_dict["GiraphJobStartTime"], "%Y-%m-%d %H:%M:%S")
+        self.job_end_time = datetime.strptime(json_dict["GiraphJobEndTime"], "%Y-%m-%d %H:%M:%S")
         
         self.experiment_group = str(json_dict["ExperimentGroup"])
         self.experiment_group_desc = json_dict["ExperimentGroupDesc"]
-        self.scala_class_name = json_dict["ScalaClassName"]
+        self.giraph_class_name = json_dict["GiraphClassName"]
         self.input_cached_in_hdfs = json_dict["InputHdfsCached"] if "InputHdfsCached" in json_dict else None
 
 
 # Results base folder
-results_base_dir = "D:\Power Measurements\\v2"
+results_base_dir = "D:\Power Measurements\\v2\\giraph"
 # results_base_dir = "D:\Power Measurements\\v2\Bad runs"
 setup_details_file_name = "setup_details.txt"
 cpu_readings_file_name = "cpu.sar"
@@ -57,10 +57,6 @@ memory_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\
 io_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[0-9]+)$'
 # Example: <1541731089.0383,112.50,95.172,98.975,97.549>
 power_regex = r'^([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+)'
-# Spark log start executor
-spark_stage_and_task_log_regex = r'^([0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+).+stage ([0-9]+\.[0-9]+).+(b09-[0-9]+).+executor ([0-9]+)'
-# Spark log any line
-spark_log_generic_log_regex = r'^([0-9]+-[0-9]+-[0-9]+\ [0-9]+:[0-9]+:[0-9]+) .+$'
 
 
 # Parses date from the first line in SAR output file. SAR outputs different formats at different times for some
@@ -83,7 +79,7 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
     all_readings = []
 
     # Parse SAR readings for each node
-    for node_name in experiment_setup.all_spark_nodes:
+    for node_name in experiment_setup.hdfs_nodes:
         node_results_dir = os.path.join(results_dir_path, node_name)
 
         # Parse CPU results
@@ -235,39 +231,7 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                         all_readings.append([timestamp.replace(microsecond=0), node_name, "power_watts", power_watts])
                         i += 1
 
-    # Parse spark log
-    spark_log_full_path = os.path.join(designated_driver_results_path, spark_log_file_name)
-    task_counter = dict.fromkeys(experiment_setup.all_spark_nodes, 0)
-
-    if os.path.exists(spark_log_full_path):
-        with open(spark_log_full_path, "r") as lines:
-            for line in lines:
-                matches = re.match(spark_stage_and_task_log_regex, line)
-                if matches:
-                    time_string = matches.group(1)
-                    timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
-                    stage = float(matches.group(2))
-                    node_name = matches.group(3)
-
-                    # If only results from subset of the nodes are available (rare case)
-                    if node_name not in experiment_setup.all_spark_nodes:
-                        continue
-
-                    if "Starting task" in line:
-                        task_counter[node_name] += 1
-                    else:
-                        task_counter[node_name] -= 1
-
-                    all_readings.append([timestamp, node_name, "spark_stage", stage])
-                    all_readings.append([timestamp, node_name, "spark_tasks", task_counter[node_name]])
-
-        # Add max and min timestamps for spark tasks with 0 to get the same time range in plots.
-        time_stamps = list(map(lambda r: r[0], all_readings))
-        min_time = min(time_stamps)
-        max_time = max(time_stamps)
-        for node_name in experiment_setup.all_spark_nodes:
-            all_readings.append([min_time, node_name, "spark_tasks", 0])
-            all_readings.append([max_time, node_name, "spark_tasks", 0])
+    # Parse giraph log
 
     # Output to file
     if output_readings_to_file:
@@ -286,10 +250,10 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
     # Filter all readings for node
     all_readings = list(filter(lambda r: r[1] == node_name, all_readings))
 
-    fig, (ax1, ax2, ax3, ax4, ax5, ax6) = plt.subplots(6, 1)
+    fig, (ax1, ax2, ax3, ax4, ax5) = plt.subplots(5, 1)
     fig.set_size_inches(w=10,h=10)
-    fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Role: {3}".format(
-        experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps,
+    fig.suptitle("Experiment ID: {0}\nPage rank on graph:{1}, Link bandwidth: {2}Mbps, Role: {3}".format(
+        experiment_id, experiment_setup.input_graph_file, experiment_setup.link_bandwidth_mbps,
         "Driver" if node_name == experiment_setup.designated_driver_node else "Executor"))
 
     # render subplots
@@ -325,19 +289,9 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
                    x_label='Time (in secs)',
                    y_label='Disk MB/sec',
                    plot_label='Writes')
-    render_subplot_by_label(ax6, all_readings,
-                   filter_label='spark_tasks',
-                   x_label='Time (in secs)',
-                   y_label='',
-                   plot_label='Number of spark tasks')
-    render_subplot_by_label(ax6, all_readings,
-                   filter_label='spark_stage',
-                   x_label='Time (in secs)',
-                   y_label='',
-                   plot_label='Spark stage')
 
     # Save the file, should be done before show()
-    output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, node_name)
+    output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_graph_file, node_name)
     output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
     plt.savefig(output_full_path)
     # plt.show()
@@ -352,11 +306,11 @@ def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
 
     fig, ax = plt.subplots(1, 1)
     fig.set_size_inches(w=20,h=10)
-    fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Label: {3}".format(
-        experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps, label_name))
+    fig.suptitle("Experiment ID: {0}\nPageRank on graph:{1}, Link bandwidth: {2}Mbps, Label: {3}".format(
+        experiment_id, experiment_setup.input_graph_file, experiment_setup.link_bandwidth_mbps, label_name))
 
     # render subplots
-    for node_name in experiment_setup.all_spark_nodes:
+    for node_name in experiment_setup.hdfs_nodes:
         render_subplot_by_node(ax, all_readings,
                         filter_node=node_name,
                         x_label='',
@@ -364,7 +318,7 @@ def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
                         plot_label=node_name)
 
     # Save the file, should be done before show()
-    output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, label_name)
+    output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_graph_file, label_name)
     output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
     plt.savefig(output_full_path)
     # plt.show()
@@ -416,11 +370,11 @@ def parse_and_plot_results(experiment_id):
     if not os.path.exists(plots_dir_full_path):
         os.mkdir(plots_dir_full_path)
 
-    for node_name in experiment_setup.all_spark_nodes:
+    for node_name in experiment_setup.hdfs_nodes:
         plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name)
 
     for label_name in ('power_watts', 'cpu_total_usage', 'mem_usage_percent', 'net_in_Mbps', 'net_out_Mbps',
-                       'disk_MBreads_ps', 'disk_MBwrites_ps', 'spark_tasks'):
+                       'disk_MBreads_ps', 'disk_MBwrites_ps'):
         plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name)
     
     return plots_dir_full_path
@@ -428,7 +382,7 @@ def parse_and_plot_results(experiment_id):
 
 # Filter experiments to generate plots
 def filter_experiments_to_consider():
-    start_time = datetime.strptime('2019-01-31 00:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2019-03-10 00:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
     # All experiments after start_time that doesn't already have plots_ folder.

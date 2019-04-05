@@ -46,23 +46,23 @@ hdfs cacheadmin -listDirectives
 sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/1000mb.input" -pool anil-cache-pool
 sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/5000mb.input" -pool anil-cache-pool
 sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/10000mb.input" -pool anil-cache-pool
-hdfs cacheadmin -listPools -stats anil-cache-pool
+sudo -u hdfs hdfs cacheadmin -addDirective -path "/user/ayelam/graph_inputs/1000mb.input" -pool cache-pool
 
-hdfs cacheadmin -addDirective -path "/user/ayelam/sort_inputs/100000mb.input" -pool cache-pool
+hdfs cacheadmin -listPools -stats cache-pool
+hdfs cacheadmin -addDirective -path "/user/ayelam/graph_inputs/darwini-2b-edges" -pool cache-pool
 
 sudo -u hdfs hdfs cacheadmin -removeDirective <directive-id>
 sudo -u hdfs dfs cacheadmin -removePool anil-cache-pool
 
 
-======== HDFS Commands
+======== HDFS data replication Commands
 Get data block placement for a file: hdfs fsck /user/ayelam/sort_inputs/20000mb.input -files -blocks -locations
 Set replication of a file or dir: hdfs dfs -setrep 1 /user/ayelam/sort_inputs/
 Add a file with certain repl. factor: hdfs dfs -D dfs.replication=2  -put 20000mb.input /user/ayelam/sort_inputs/
-Algo to SortLegacy
-
-
 hdfs dfs -setrep 3 /user/ayelam/sort_inputs/
 
+hdfs dfs  -D dfs.replication=2  -put /usr/local/home/ayelam/darwini-2b-edges/  /user/ayelam/graph_inputs/
+hdfs dfs -setrep 1 /user/ayelam/graph_inputs/darwini-2b-edges
 
 ========= Giraph job submit commands
 
@@ -70,8 +70,9 @@ Help:
 $HADOOP_HOME/bin/hadoop jar $GIRAPH_HOME/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar org.apache.giraph.GiraphRunner -help
 
 Submit pagerank job:
-hadoop jar $GIRAPH_HOME/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar org.apache.giraph.GiraphRunner org.apache.giraph.examples.SimplePageRankComputation -vif org.apache.giraph.io.formats.JsonLongDoubleFloatDoubleVertexInputFormat -vip /tmp/tiny_graph.txt -vof org.apache.giraph.io.formats.IdWithValueTextOutputFormat -op /tmp/pageranks4 -w 1 --masterCompute org.apache.giraph.examples.SimplePageRankComputation\$SimplePageRankMasterCompute --yarnjars giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar
+hadoop jar $GIRAPH_HOME/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar org.apache.giraph.GiraphRunner org.apache.giraph.examples.SimplePageRankComputation -vif org.apache.giraph.io.formats.LongDoubleFloatTextInputFormat -vip /user/ayelam/graph_inputs/darwini-10m-edges -vof org.apache.giraph.io.formats.IdWithValueTextOutputFormat -op /tmp/darwini-10m-edges --masterCompute org.apache.giraph.examples.SimplePageRankComputation\$SimplePageRankMasterCompute --yarnjars giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar --yarnheap 65536 -w 2
 
+giraph /usr/local/home/hadoop/giraph/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.5.1-jar-with-dependencies.jar org.apache.giraph.examples.SimplePageRankComputation -vif org.apache.giraph.io.formats.LongDoubleFloatTextInputFormat -vip /user/ayelam/graph_inputs/darwini-2b-edges -vof org.apache.giraph.io.formats.IdWithValueTextOutputFormat -op /tmp/darwini-2b-edges11 --mc org.apache.giraph.examples.SimplePageRankComputation\$SimplePageRankMasterCompute  -w 7 -ca giraph.numComputeThreads=5,giraph.numInputThreads=5
 
 ======= Firewall ports opened
 50070 - HDFS namenode

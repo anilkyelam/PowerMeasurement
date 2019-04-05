@@ -1,7 +1,8 @@
 """
-Runs power measurement experiments on the spark test cluster
+Runs power measurement experiments on hdfs+yarn cluster using giraph jobs
 """
 
+import argparse
 import datetime
 import paramiko
 import os
@@ -13,12 +14,12 @@ from scp import SCPClient
 
 
 # Experimental Setup constants
-spark_nodes = ["b09-40", "b09-38", "b09-36", "b09-34", "b09-32", "b09-30", "b09-42", "b09-44"]
-spark_nodes_dns_suffx = "sysnet.ucsd.edu"
-designated_spark_driver_node = "b09-40"
+hdfs_nodes = ["b09-40", "b09-38", "b09-36", "b09-34", "b09-32", "b09-30", "b09-42", "b09-44"]
+hdfs_nodes_dns_suffx = "sysnet.ucsd.edu"
+designated_giraph_driver_node = "b09-40"
 designated_hdfs_master_node = "b09-40"
 power_meter_nodes_in_order = []
-padding_in_secs = 60
+padding_in_secs = 5
 fat_tree_ip_mac_map = {
     "b09-40": ("ec:0d:9a:68:21:c8", "10.0.0.1"),
     "b09-38": ("ec:0d:9a:68:21:c4", "10.0.1.1"),
@@ -39,7 +40,7 @@ def path_to_windows_style(path):
 
 
 # Remote node constants
-remote_home_folder = '/home/ayelam/bf-cluster/sparksort'
+remote_home_folder = '/home/ayelam/giraph'
 remote_scripts_folder = path_to_linux_style(os.path.join(remote_home_folder, "node-scripts"))
 remote_results_folder = path_to_linux_style(os.path.join(remote_home_folder, "results"))
 etc_folder = "/etc/"
@@ -49,15 +50,15 @@ fat_tree_hosts_file_name = "hosts_fattree"
 
 
 # Local constants
-local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\bf_cluster\\node-scripts"
-local_results_folder = 'D:\Power Measurements\\v2'
+local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\giraph\\node-scripts"
+local_results_folder = 'D:\Power Measurements\\v2\\giraph'
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
 stop_sar_readings_file = 'stop_sar_readings.sh'
 start_power_readings_file = 'start_power_readings.sh'
 stop_power_readings_file = 'stop_power_readings.sh'
 cleanup_after_experiment_file = 'cleanup_after_experiment.sh'
-run_spark_job_file = 'run_spark_job.sh'
+run_giraph_job_file = 'run_giraph_job.sh'
 
 
 # Creates SSH client using paramiko lib.
@@ -70,7 +71,7 @@ def create_ssh_client(server, port, user, password):
 
 
 # Executes command with ssh client and reads from out and err buffers so it does not block.
-def ssh_execute_command(ssh_client, command, sudo_password = None):
+def ssh_execute_command(ssh_client, command, sudo_password = None): 
     
     if sudo_password:
         run_as_sudo_prefix = 'echo {0} | sudo -S '.format(sudo_password)
@@ -78,7 +79,7 @@ def ssh_execute_command(ssh_client, command, sudo_password = None):
 
     _, stdout, stderr = ssh_client.exec_command(command)
     output = str(stdout.read() + stderr.read())
-    # print(output)
+    print(output)
     return output
 
 
@@ -94,8 +95,8 @@ def create_folder_if_not_exists(ssh_client, remote_folder_path):
 # Sets up each node - adding hosts files, setting IP address, ARP entries, etc.
 def set_up_on_each_node(root_user_name, password, current_toplogy_hosts_file_name):
 
-    for node_name in spark_nodes:
-        node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
+    for node_name in hdfs_nodes:
+        node_full_name = "{0}.{1}".format(node_name, hdfs_nodes_dns_suffx)
 
         with create_ssh_client(node_full_name, 22, root_user_name, password) as ssh_client:    
             print("Setting up hosts file on " + node_full_name)
@@ -113,8 +114,8 @@ def set_up_on_each_node(root_user_name, password, current_toplogy_hosts_file_nam
 
 # Reverts changes on each node - cleanup to hosts file on all nodes, resets TC, refreshes link interface, etc.
 def clean_up_on_each_node(root_user_name, password):
-    for node_name in spark_nodes:
-        node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
+    for node_name in hdfs_nodes:
+        node_full_name = "{0}.{1}".format(node_name, hdfs_nodes_dns_suffx)
         with create_ssh_client(node_full_name, 22, root_user_name, password) as ssh_client:
             
             print("Cleaning up hosts file on " + node_full_name)
@@ -129,13 +130,13 @@ def clean_up_on_each_node(root_user_name, password):
 # Starts HDFS + YARN cluster for spark runs
 def start_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
     print("Starting hdfs and yarn cluster")
-    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
+    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, hdfs_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
     ssh_execute_command(master_node_ssh_client, "bash hadoop/sbin/start-dfs.sh && bash hadoop/sbin/start-yarn.sh")
 
     # Check if the cluster is up and running properly i.e., all the data nodes are up
     output = ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs dfsadmin -report")
-    errors = ["Node {0} not found in the cluster report\n".format(node_name) for node_name in spark_nodes 
+    errors = ["Node {0} not found in the cluster report\n".format(node_name) for node_name in hdfs_nodes 
         if node_name != designated_hdfs_master_node and node_name not in output] 
     if errors.__len__() > 0:
         print(errors)
@@ -147,7 +148,7 @@ def start_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
 def stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
     # Remove cache directives so that when HDFS starts up again, your prepare_env_script doesn't think the file is already in cache
     print("Removing hdfs cache directives of input files")
-    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
+    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, hdfs_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
     ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs cacheadmin -removeDirectives -path '/user/ayelam'")
 
@@ -156,11 +157,10 @@ def stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
 
 
 # Set up environment for each experiment
-def prepare_env_for_experiment(ssh_client, password_for_sudo, input_size_mb, cache_hdfs_file):
+def prepare_env_for_experiment(ssh_client, password_for_sudo):
     print("Preparing env for experiment")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, prepare_for_experiment_file))
-    ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3}'.format(script_file, remote_scripts_folder,
-                                                                    input_size_mb, 1 if cache_hdfs_file else 0))
+    ssh_execute_command(ssh_client, 'bash {0}'.format(script_file))
 
 
 # Starts SAR readings
@@ -170,12 +170,12 @@ def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
     ssh_execute_command(ssh_client, 'bash {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
 
 
-# Starts spark job with specified algorithm (scala class name) and input size.
-def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name):
-    print("Starting spark job")
-    script_file = path_to_linux_style(os.path.join(remote_scripts_folder, run_spark_job_file))
+# Starts giraph job with specified algorithm (giraph class name) and input graph.
+def run_giraph_job(ssh_client, node_exp_folder_path, giraph_class_name, input_graph_name):
+    print("Starting giraph job")
+    script_file = path_to_linux_style(os.path.join(remote_scripts_folder, run_giraph_job_file))
     ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3} {4}'.format(script_file, remote_scripts_folder, node_exp_folder_path, 
-                                                                                input_size_mb, scala_class_name))
+        giraph_class_name, input_graph_name))
 
 
 # Stops SAR readings
@@ -237,10 +237,9 @@ def refresh_link_interface(ssh_client, password_for_sudo):
     ssh_execute_command(ssh_client, set_if_up_command, sudo_password=password_for_sudo)
 
 
-# Runs a single experiment with specific configurations like input size, network rate, etc.
-# Prepares necessary setup to collect readings and runs spark jobs.
-def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_password, input_size_mb, 
-                    link_bandwidth_mbps, cache_hdfs_file):
+# Runs a single experiment with specific configurations like input graph and network rate
+def run_experiment(exp_run_id, exp_run_desc, giraph_class_name, root_user_name, root_password, 
+                        hadoop_user_name, hadoop_password, input_graph_name, link_bandwidth_mbps, cache_hdfs_file):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
 
@@ -249,29 +248,29 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
         experiment_folder_path = path_to_linux_style(os.path.join(remote_results_folder, experiment_folder_name))
 
         print("Starting experiment: ", experiment_id)
-        driver_node_full_name = "{0}.{1}".format(designated_spark_driver_node, spark_nodes_dns_suffx)
-        driver_ssh_client = create_ssh_client(driver_node_full_name, 22, user_name, user_password)
+        driver_node_full_name = "{0}.{1}".format(designated_giraph_driver_node, hdfs_nodes_dns_suffx)
+        driver_ssh_client = create_ssh_client(driver_node_full_name, 22, root_user_name, root_password)
 
         # Make sure directory structure exists in NFS home folder
         create_folder_if_not_exists(driver_ssh_client, experiment_folder_path)
 
         # Prepare for experiment. Create input spark files if they do not exist.
-        prepare_env_for_experiment(driver_ssh_client, user_password, input_size_mb, cache_hdfs_file)
+        prepare_env_for_experiment(driver_ssh_client, root_password)
 
         # Prepare environment and start collecting readings on each node
-        for node_name in spark_nodes:
-            node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-            with create_ssh_client(node_full_name, 22, user_name, user_password) as ssh_client:
-                print("Setting up for Spark Job on node " + node_name)
+        for node_name in hdfs_nodes:
+            node_full_name = "{0}.{1}".format(node_name, hdfs_nodes_dns_suffx)
+            with create_ssh_client(node_full_name, 22, root_user_name, root_password) as ssh_client:
+                print("Setting up for giraph job on node " + node_name)
                 node_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, node_name))
                 create_folder_if_not_exists(ssh_client, node_exp_folder_path)
 
                 # Clear all kinds of file data from caches
-                clear_page_inode_dentries_cache(ssh_client, user_password)
+                clear_page_inode_dentries_cache(ssh_client, root_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                reset_network_rate_limit(ssh_client, user_password)
-                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
+                reset_network_rate_limit(ssh_client, root_password)
+                set_network_rate_limit(ssh_client, link_bandwidth_mbps, root_password)
 
                 start_sar_readings(ssh_client, node_exp_folder_path)
 
@@ -280,24 +279,28 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
         # start_power_readings(driver_ssh_client, driver_exp_folder_path)
 
         # Wait a bit before the run
-        # time.sleep(padding_in_secs)
+        time.sleep(padding_in_secs)
 
         # Kick off the run
-        spark_job_start_time = datetime.datetime.now()
-        driver_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, designated_spark_driver_node))
-        run_spark_job(driver_ssh_client, driver_exp_folder_path, input_size_mb, scala_class_name)
-        spark_job_end_time = datetime.datetime.now()
+        giraph_job_start_time = datetime.datetime.now()
+        driver_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, designated_giraph_driver_node))
+        
+        with create_ssh_client(driver_node_full_name, 22, hadoop_user_name, hadoop_password) as ssh_client:
+            run_giraph_job(ssh_client, driver_exp_folder_path, giraph_class_name, input_graph_name)
+        # input("Press [Enter] to continue.")
+
+        giraph_job_end_time = datetime.datetime.now()
 
         # Wait a bit after the run
-        # time.sleep(padding_in_secs)
+        time.sleep(padding_in_secs)
 
         # Stop power readings TODO: No powermeter connected for now.
         # stop_power_readings(driver_ssh_client, driver_exp_folder_path)
 
         # Stop collecting SAR readings on each node
-        for node_name in spark_nodes:
-            node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-            with create_ssh_client(node_full_name, 22, user_name, user_password) as ssh_client:
+        for node_name in hdfs_nodes:
+            node_full_name = "{0}.{1}".format(node_name, hdfs_nodes_dns_suffx)
+            with create_ssh_client(node_full_name, 22, root_user_name, root_password) as ssh_client:
                 stop_sar_readings(ssh_client)
 
         # Copy results to local machine
@@ -311,20 +314,21 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
             {
                 "ExperimentGroup": exp_run_id,
                 "ExperimentGroupDesc": exp_run_desc,
-                "ScalaClassName": scala_class_name,
+                "GiraphClassName": giraph_class_name,
                 "InputHdfsCached": cache_hdfs_file,
                 
                 "ExperimentId": experiment_id,
                 "ExperimentStartTime": experiment_start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "SparkJobStartTime": spark_job_start_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "SparkJobEndTime": spark_job_end_time.strftime("%Y-%m-%d %H:%M:%S"),
-                "AllSparkNodes": spark_nodes,
+                "GiraphJobStartTime": giraph_job_start_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "GiraphJobEndTime": giraph_job_end_time.strftime("%Y-%m-%d %H:%M:%S"),
+                "HdfsNodes": hdfs_nodes,
                 "PowerMeterNodesInOrder": power_meter_nodes_in_order,
                 "HdfsMasterNode": designated_hdfs_master_node,
-                "SparkDriverNode": designated_spark_driver_node,
-                "InputSizeGb": input_size_mb/1000.0,
+                "GiraphDriverNode": designated_giraph_driver_node,
+                "InputGraphFile": input_graph_name,
                 "LinkBandwidthMbps": link_bandwidth_mbps,
-                "PaddingInSecs": padding_in_secs
+                "PaddingInSecs": padding_in_secs,
+                "Comments": ""
             }, setup_file, indent=4, sort_keys=True)
 
         # Cleanup on each node
@@ -339,16 +343,54 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
         return None
 
 
-# Main
-def main():
-    # scala_class_name = "SortLegacy"
-    scala_class_name = "SortNoDisk"
+def copy_src_files(root_user_name, root_password):
+    print("Copying source files to NFS")
+    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, hdfs_nodes_dns_suffx)
+    with create_ssh_client(master_node_full_name, 22, root_user_name, root_password) as master_node_ssh_client:
+        # Make sure the directory structure exists in NFS home folder
+        create_folder_if_not_exists(master_node_ssh_client, remote_home_folder)
+        create_folder_if_not_exists(master_node_ssh_client, remote_results_folder)
 
-    input_sizes_mb = [100000]
-    link_bandwidth_mbps = [0] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+        # Copy source files to NFS
+        with SCPClient(master_node_ssh_client.get_transport()) as scp:
+            scp.put(local_node_scripts_folder, remote_home_folder, recursive=True)
+
+
+# Set up environment for experiments
+def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
+    set_up_on_each_node(root_user_name, root_password, fat_tree_hosts_file_name)
+    start_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+
+
+# Run experiments
+def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc):
+    giraph_class_name = "SimplePageRankComputation"
+
+    input_graph_files = [ "darwini-5b-edges" ]
+    link_bandwidth_mbps = [10000]   # [200, 500, 1000, 2000, 3000, 5000, 8000, 10000]
     iterations = range(1, 2)
-    cache_hdfs_input = True
+    cache_hdfs_input = False
 
+    # Command line arguments
+    exp_run_id = "Run-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+
+    # Run all experiments
+    for iter_ in iterations:
+        for link_bandwidth in link_bandwidth_mbps:
+            for input_graph_name in input_graph_files:
+                print("Running experiment: {0}, {1}, {2}".format(iter_, input_graph_name, link_bandwidth))
+                run_experiment(exp_run_id, exp_run_desc, giraph_class_name, root_user_name, root_password, hadoop_user_name,
+                    hadoop_password, input_graph_name, link_bandwidth, cache_hdfs_file=cache_hdfs_input)
+                # time.sleep(1*60)
+
+
+def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  
+    print("Tearing down the environment...")      
+    stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+    clean_up_on_each_node(root_user_name, root_password)
+
+
+def main():
     # Get user creds from temp files
     root_user_password_info = open("root-user.pass").readline()  # One line in <user>;<password> format.
     root_user_name = root_user_password_info.split(";")[0]
@@ -357,53 +399,28 @@ def main():
     hadoop_user_name = hadoop_user_password_info.split(";")[0]
     hadoop_password = hadoop_user_password_info.split(";")[1]
 
-    # Command line arguments
-    exp_run_id = "Run-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    exp_run_desc = sys.argv[1]
+    # Parse args and call relevant action
+    parser = argparse.ArgumentParser("Runs power measurement experiments on hdfs+yarn cluster using giraph jobs")
+    parser.add_argument('--setup', action='store_true', help='sets up environment, including bringing up hadoop cluster')
+    parser.add_argument('--teardown', action='store_true', help='clean up environment, including removing hadoop cluster')
+    parser.add_argument('--refresh', action='store_true', help='copy updated source scripts to NFS')
+    parser.add_argument('--run', action='store_true', help='runs experiments')
+    parser.add_argument('--desc', action='store', help='description for the current runs')
+    args = parser.parse_args()
 
-    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
-    master_node_ssh_client = create_ssh_client(master_node_full_name, 22, root_user_name, root_password)
+    if args.setup:
+        setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password)
+        copy_src_files(root_user_name, root_password)
 
-    try:
-        # Make sure directory structure exists in NFS home folder
-        create_folder_if_not_exists(master_node_ssh_client, remote_home_folder)
-        create_folder_if_not_exists(master_node_ssh_client, remote_results_folder)
+    if args.refresh:
+        copy_src_files(root_user_name, root_password)
 
-        # Copy source files to NFS
-        with SCPClient(master_node_ssh_client.get_transport()) as scp:
-            scp.put(local_node_scripts_folder, remote_home_folder, recursive=True)
+    if args.run:
+        assert args.desc is not None, 'Provide description with --desc parameter for this run!'
+        run(root_user_name, root_password, hadoop_user_name, hadoop_password, args.desc)
 
-            # Fix for gensort file losing execute permissions on copying over from windows to linux
-            remote_gensort_file_path = path_to_linux_style(os.path.join(remote_scripts_folder, "gensort"))
-            master_node_ssh_client.exec_command("chmod +x {0}".format(remote_gensort_file_path))
-
-        # Set up environment for experiments
-        set_up_on_each_node(root_user_name, root_password, fat_tree_hosts_file_name)
-        start_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
-        input("Press [Enter] to continue.")
-
-        # Run all experiments
-        for iter_ in iterations:
-            for link_bandwidth in link_bandwidth_mbps:
-                for input_size_mb in input_sizes_mb:
-                    print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
-                    run_experiment(exp_run_id, exp_run_desc, scala_class_name, root_user_name, root_password, 
-                        int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
-                    # time.sleep(1*60)
-
-    finally:
-        # Clean up
-        while True:
-            resp = input("Tear down environment? Press [Y] or [N] to continue.")
-            if resp.upper() == "Y":      
-                print("Tearing down the environment...")      
-                stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
-                clean_up_on_each_node(root_user_name, root_password)
-                break
-            elif resp.upper() == "N":
-                break
-
-        master_node_ssh_client.close()
+    if args.teardown:
+        teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password)
 
 
 if __name__ == '__main__':

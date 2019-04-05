@@ -10,6 +10,7 @@ import random
 import matplotlib.pyplot as plt
 import json
 import traceback as tc
+import numpy as np
 
 
 # Experiment setup class
@@ -33,7 +34,7 @@ class ExperimentSetup:
 
 
 # Results base folder
-results_base_dir = "D:\Power Measurements\\v2"
+results_base_dir = "D:\Power Measurements\\v2\\spark"
 # results_base_dir = "D:\Power Measurements\\v2\Bad runs"
 setup_details_file_name = "setup_details.txt"
 cpu_readings_file_name = "cpu.sar"
@@ -371,6 +372,36 @@ def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
     plt.close()
 
 
+def plot_cdf_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name):
+    
+    # Filter all readings from the exact duration of spark job and for the label 
+    all_readings = [r for r in all_readings if r[2] == label_name and 
+                        (experiment_setup.spark_job_start_time < r[0] < experiment_setup.spark_job_end_time)]
+
+    fig, ax = plt.subplots(1, 1)
+    fig.set_size_inches(w=10,h=10)
+    # plt.clf()
+    # plt.rcParams.update({'font.size': 20})
+    fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Label: {3}".format(
+        experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps, label_name))
+
+    # render cdf subplots
+    for node_name in ["b09-38"]: # experiment_setup.all_spark_nodes:
+        render_cdf_subplot_by_node(ax, all_readings,
+                        filter_node=node_name,
+                        x_label=label_name,
+                        y_label='CDF',
+                        plot_label=node_name)
+        # plt.show()
+
+    # Save the file, should be done before show()
+    output_plot_file_name = "plot_cdf_{0}_{1}.png".format(experiment_setup.input_size_gb, label_name)
+    output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
+    plt.savefig(output_full_path)
+    # plt.show()
+    plt.close()
+
+
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
 def render_subplot_by_label(ax, all_readings, filter_label, x_label, y_label, plot_label=None):
     filtered_readings = list(filter(lambda r: r[2] == filter_label, all_readings))
@@ -393,6 +424,31 @@ def render_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot
         ax.legend()
     else:
         ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)))
+
+
+# Generates cdf for a list 
+def gen_cdf(np_array, num_bin):
+   array = np.sort(np_array)
+   h, edges = np.histogram(array, density=True, bins=num_bin )
+   h = np.cumsum(h)/np.cumsum(h).max()
+   x = edges.repeat(2)[:-1]
+   y = np.zeros_like(x)
+   y[1:] = h.repeat(2)
+   return x, y
+
+
+# Filters a subset of readings from all readings based on the filter label and plots it on provided axes
+def render_cdf_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot_label=None):
+    filtered_readings = list(filter(lambda r: r[1] == filter_node, all_readings))
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    all_values = [ r[3] for r in filtered_readings ]
+    x,y = gen_cdf(all_values, 100)
+    if plot_label is not None:
+        ax.plot(x, y, label=plot_label)
+        ax.legend()
+    else:
+        ax.plot(x, y)
 
 
 # Parse results and generate plots for one experiment, and returns full path to the output folder
@@ -418,11 +474,16 @@ def parse_and_plot_results(experiment_id):
 
     for node_name in experiment_setup.all_spark_nodes:
         plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name)
+        pass
 
-    for label_name in ('power_watts', 'cpu_total_usage', 'mem_usage_percent', 'net_in_Mbps', 'net_out_Mbps',
-                       'disk_MBreads_ps', 'disk_MBwrites_ps', 'spark_tasks'):
+    for label_name in ['power_watts', 'cpu_total_usage', 'mem_usage_percent', 'net_in_Mbps', 'net_out_Mbps',
+                       'disk_MBreads_ps', 'disk_MBwrites_ps', 'spark_tasks']:
         plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name)
-    
+        pass
+
+    for label_name in ['net_out_Mbps']:
+        plot_cdf_for_one_label(plots_dir_full_path, all_readings, experiment_id, experiment_setup, label_name)
+
     return plots_dir_full_path
 
 

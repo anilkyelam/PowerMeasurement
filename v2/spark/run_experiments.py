@@ -49,8 +49,8 @@ fat_tree_hosts_file_name = "hosts_fattree"
 
 
 # Local constants
-local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\bf_cluster\\node-scripts"
-local_results_folder = 'D:\Power Measurements\\v2'
+local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\spark\\node-scripts"
+local_results_folder = 'D:\Power Measurements\\v2\\spark'
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
 stop_sar_readings_file = 'stop_sar_readings.sh'

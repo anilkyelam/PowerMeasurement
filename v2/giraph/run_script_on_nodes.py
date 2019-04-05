@@ -42,17 +42,25 @@ def create_or_reset_tmpfs_ram_disk(ssh_client, root_password):
 
 # Utility to run a custom script on all the spark nodes
 def run_script():
-    user_password_info = open("root-user.pass").readline()   # One line in <user>;<password> format.
-    user_name = user_password_info.split(";")[0]
-    password = user_password_info.split(";")[1]
+    # Get user creds from temp files
+    root_user_password_info = open("root-user.pass").readline()  # One line in <user>;<password> format.
+    root_user_name = root_user_password_info.split(";")[0]
+    root_password = root_user_password_info.split(";")[1]
+    hadoop_user_password_info = open("hadoop-user.pass").readline()  # One line in <user>;<password> format.
+    hadoop_user_name = hadoop_user_password_info.split(";")[0]
+    hadoop_password = hadoop_user_password_info.split(";")[1]
 
     for node_name in new_spark_nodes:
         node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
-        ssh_client = create_ssh_client(node_full_name, 22, user_name, password)
+        ssh_client = create_ssh_client(node_full_name, 22, root_user_name, root_password)
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
-        create_or_reset_tmpfs_ram_disk(ssh_client, password)
-        # ssh_execute_command(ssh_client, "shutdown -r", sudo_password=password)
+        create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
+        # ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "shutdown -r", sudo_password=root_password)
+ 
+        # hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
+        # ssh_execute_command(hdp_user_ssh_client, "pkill java")
 
 if __name__ == '__main__':
     run_script()

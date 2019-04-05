@@ -569,7 +569,7 @@ def plot_exp_duration_per_input_size(run_id, exp_metrics_list, output_dir, input
     """
 
     fig, ax = plt.subplots(1,1)
-    fig.suptitle("Experiment duration ({0} GB)".format(input_size_gb))
+    fig.suptitle("Experiment duration ({0} GB)  ".format(input_size_gb))
     ax.set_xlabel("Link bandwidth Mbps")
     ax.set_ylabel("Duration (secs)")
 
@@ -584,11 +584,12 @@ def plot_exp_duration_per_input_size(run_id, exp_metrics_list, output_dir, input
         for link_rate in all_link_rates:
             link_filtered = list(filter(lambda f: f.link_bandwidth_mbps == link_rate, exp_type_filtered))
             all_exp_durations = [e.duration.total_seconds() for e in link_filtered]
-            # avg_power_readings.append(math.log(np.mean(power_values)))
+            # avg_durations.append(math.log(np.mean(all_exp_durations)))
             avg_durations.append(np.mean(all_exp_durations))
             std_durations.append(np.std(all_exp_durations))
-            # print(input_size_gb, link_rate, all_exp_durations, round(np.mean(all_exp_durations), 2), round(np.std(all_exp_durations), 2), sep=", ")
+            # print(round(math.log(link_rate), 2), round(math.log(np.mean(all_exp_durations)), 2), sep=", ")
 
+        log_link_rates = [math.log(l) for l in all_link_rates]
         ax.errorbar(all_link_rates, avg_durations, std_durations, label='Exp group: {0}'.format(exp_type_id), marker="x")
     
     plt.legend()
@@ -622,17 +623,17 @@ def load_all_experiments(start_time, end_time):
 
 
 # Filters
-power_plots_output_dir = 'D:\Power Measurements\\v2\PowerPlots\\' + datetime.now().strftime("%m-%d")
+power_plots_output_dir = plot_one_experiment.results_base_dir + "\\PowerPlots\\" + datetime.now().strftime("%m-%d")
 global_start_time = datetime.strptime('2019-02-04 00:00:00', "%Y-%m-%d %H:%M:%S")
 global_end_time = datetime.now()
 experiment_groups_filter = [
     # 4, # "First runs with TC rate-limiting"
-    "7", # "Ratelimiting for 100Gb" With more executors
+    # "7", # "Ratelimiting for 100Gb" With more executors
     "Run-2019-02-16-18-30-17", # Varying network rates - all CPUs working
-    "Run-2019-02-28-12-23-00", # Using Kyro serialization 
+    # "Run-2019-02-28-12-23-00", # Using Kyro serialization 
 ]
 input_sizes_filter = [100]
-link_rates_filter = [1000, 2000, 4000, 5000, 6000, 10000]
+link_rates_filter = [200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
 
@@ -659,6 +660,7 @@ def main():
     all_experiments = load_all_experiments(global_start_time, global_end_time)
     relevant_experiments = filter_experiments_to_consider(all_experiments)
     all_results = [get_metrics_summary_for_experiment(exp.experiment_id, exp) for exp in relevant_experiments]
+    print("Output plots at path: " + power_plots_output_dir)
 
     if not os.path.exists(power_plots_output_dir):
         os.mkdir(power_plots_output_dir)
