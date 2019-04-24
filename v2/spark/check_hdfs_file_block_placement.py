@@ -15,7 +15,7 @@ import socket
 
 
 # Command to run
-file_path = "/user/ayelam/sort_inputs/100000mb.input"
+file_path = "/user/ayelam/sort_inputs/20000mb.input"
 hdfs_fsck_command = "hdfs fsck {0} -files -blocks -locations".format(file_path)
 # master_node_name = "ccied21.sysnet.ucsd.edu"
 master_node_name = "b09-40.sysnet.ucsd.edu"
@@ -77,9 +77,6 @@ def main():
         print("Something wrong!")
         exit()
 
-    if not os.path.exists(power_plots_output_dir):
-        os.mkdir(power_plots_output_dir)
-
     fig, ax = plt.subplots(1,1)
     fig.suptitle("Data block placement for file: " + file_path)
     values = blocks_counter.values()
@@ -87,8 +84,12 @@ def main():
     ax.bar(blocks_counter.keys(), proportions)
     ax.set_ylabel("% of blocks")
     ax.set_xlabel("Nodes")
+    print(blocks_counter)
 
-    # plt.show()
+    plt.show()
+
+    if not os.path.exists(power_plots_output_dir):
+        os.mkdir(power_plots_output_dir)
     output_plot_file_name = "file_placement_{0}.png".format(datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f"))
     output_full_path = os.path.join(power_plots_output_dir, output_plot_file_name)
     plt.savefig(output_full_path)

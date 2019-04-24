@@ -1,4 +1,8 @@
 
+======= Hadoop cluster access URLs
+Hdfs overview: http://b09-40.sysnet.ucsd.edu:50070/dfshealth.html#tab-overview
+Mapred/YARN job history server: b09-40.sysnet.ucsd.edu:19888 or b09-40.sysnet.ucsd.edu:10020
+
 ======= Misc
 Copy hadoop conf to rest of the nodes: 
   for d in 38 36 34 32 30 42 44; do scp hadoop/etc/hadoop/file_name   b09-$d:~/hadoop/etc/hadoop/ ; done
@@ -23,10 +27,6 @@ spark-submit --class PowerMeasurements.SortNoDisk \
 spark-submit --class PowerMeasurements.SortNoDisk "D:\SparkSort\target\scala-2.11\sparksort_2.11-0.1.jar" local "D:\SparkSort\input\100mb.input" 
 
 
-/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input
-/user/shw328/128gb.input < Revert in run_sort_job.sh and prepare_for_experiment.sh
-
-
 ======== Creating a tmpfs RAM Disk
 mkdir /mnt/ramdisk
 mount -t tmpfs -o size=40G tmpfs /mnt/ramdisk
@@ -34,7 +34,6 @@ Add this to /etc/fstab file to make it survive reboots: tmpfs       /mnt/ramdisk
 
  
 ======== HDFS Cache Management commands
-
 Two settings:
   - "dfs.client.mmap.enabled" should be "true", which is the default value for this setting.
   - "dfs.datanode.max.locked.memory" - max number of bytes that hadoop uses for caching blocks or HDFS read caching.
@@ -64,8 +63,8 @@ hdfs dfs -setrep 3 /user/ayelam/sort_inputs/
 hdfs dfs  -D dfs.replication=2  -put /usr/local/home/ayelam/darwini-2b-edges/  /user/ayelam/graph_inputs/
 hdfs dfs -setrep 1 /user/ayelam/graph_inputs/darwini-2b-edges
 
-========= Giraph job submit commands
 
+========= Giraph job submit commands
 Help:
 $HADOOP_HOME/bin/hadoop jar $GIRAPH_HOME/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar org.apache.giraph.GiraphRunner -help
 
@@ -73,6 +72,20 @@ Submit pagerank job:
 hadoop jar $GIRAPH_HOME/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar org.apache.giraph.GiraphRunner org.apache.giraph.examples.SimplePageRankComputation -vif org.apache.giraph.io.formats.LongDoubleFloatTextInputFormat -vip /user/ayelam/graph_inputs/darwini-10m-edges -vof org.apache.giraph.io.formats.IdWithValueTextOutputFormat -op /tmp/darwini-10m-edges --masterCompute org.apache.giraph.examples.SimplePageRankComputation\$SimplePageRankMasterCompute --yarnjars giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.8.5-jar-with-dependencies.jar --yarnheap 65536 -w 2
 
 giraph /usr/local/home/hadoop/giraph/giraph-examples/target/giraph-examples-1.3.0-SNAPSHOT-for-hadoop-2.5.1-jar-with-dependencies.jar org.apache.giraph.examples.SimplePageRankComputation -vif org.apache.giraph.io.formats.LongDoubleFloatTextInputFormat -vip /user/ayelam/graph_inputs/darwini-2b-edges -vof org.apache.giraph.io.formats.IdWithValueTextOutputFormat -op /tmp/darwini-2b-edges11 --mc org.apache.giraph.examples.SimplePageRankComputation\$SimplePageRankMasterCompute  -w 7 -ca giraph.numComputeThreads=5,giraph.numInputThreads=5
+
+
+======= Monitoring memory bandwidth
+Using PQoS provided by intel-cat-cmt tools: https://github.com/intel/intel-cmt-cat
+
+
+======= Network traffic breakdown
+Per-flow packet trace using tShark:
+sudo tshark -i enp101s0 -t a -T fields -e frame.time_epoch -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e frame.len -Q out "tcp" > net_usage_break_down
+
+To put temp file and final output files in ramdisk (and not disk) so the disk does not cause packet drops in capture. (although it can only support smaller sizes, tmp pacp files for 100GB input sort takes up memory)
+sudo tshark -i enp101s0 -t a -T fields -e frame.time_epoch -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstport -e frame.len -B 100 -w /mnt/ramdisk/tshark_temp_file -Q out "ip" > /mnt/ramdisk/net_usage_breakdown
+
+================== ARCHIVED ==========================================================================================================
 
 ======= Firewall ports opened
 50070 - HDFS namenode
@@ -88,19 +101,6 @@ sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50070 -m connt
 sudo iptables -I INPUT 9 -s ayelam.sysnet.ucsd.edu -p tcp --dport 50075 -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT		// ccied29
 
 
-======= Monitoring memory bandwidth
-Using PQoS provided by intel-cat-cmt tools: https://github.com/intel/intel-cmt-cat
-
-
-
-======= Changes for Shuting's experiments
-Remove all caching stuff
-FILE_PATH_HDFS="/user/ayelam/sort_inputs/${INPUT_SIZE_MB}mb.input" in prepare_for_experiment.sh
-num-executors AND input file (/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input) in run_spark_job.sh
-limit_executors in run_experiments.py
-
-
-
 ======== Experiments 
     # 12/10 22:00 to 12/11 14:00        ---> No output (Caching, 3 replicas)
     # 12/06 00:00 to 12/08 00:00        ---> No output (No caching, 3 replicas)
@@ -112,4 +112,8 @@ limit_executors in run_experiments.py
     # 2019-01-20 23:00:00 to                ---> Legacy sort (No Trash, 3 replicas)
 
 
-  
+======= Changes for Shuting's experiments
+Remove all caching stuff
+FILE_PATH_HDFS="/user/ayelam/sort_inputs/${INPUT_SIZE_MB}mb.input" in prepare_for_experiment.sh
+num-executors AND input file (/user/ayelam/sort_inputs/${SIZE_IN_MB}mb.input) in run_spark_job.sh
+limit_executors in run_experiments.py

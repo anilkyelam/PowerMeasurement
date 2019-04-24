@@ -1,7 +1,4 @@
 
-Generic instructions here:
-Hadoop: https://www.linode.com/docs/databases/hadoop/how-to-install-and-set-up-hadoop-cluster/
-Spark: https://www.linode.com/docs/databases/hadoop/install-configure-run-spark-on-top-of-hadoop-yarn-cluster/
 	
 	
 ======================== HANDY COMMANDS =======================
@@ -12,7 +9,7 @@ Stop all: stop-yarn.sh && stop-dfs.sh
 	
 	
 ==========================  HDFS + YARN SETUP  =========================================================================================
-	
+
 1. Install proper java version (latest is not supported by Hadoop yet). 
 	Use Java 8 as stated on hadoop website or here: https://stackoverflow.com/questions/52155078/how-to-fix-hadoop-warning-an-illegal-reflective-access-operation-has-occurred-e
 	Some of the machines have Java 10 installed. The way to configure is install Java 8 and change default version to 8.
@@ -299,9 +296,28 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	
 	/usr/local/home/hadoop/spark/bin/spark-submit --class PowerMeasurements.SortLegacy target/scala-2.11/sparksort_2.11-0.1.jar yarn /user/ayelam/1000mb.input /user/ayelam/10001mb.output /user/ayelam/taskstats_${unixstamp}
 
+7. To setup external shuffle services
+	Main article: https://spark.apache.org/docs/latest/running-on-yarn.html#configuring-the-external-shuffle-service
+	a. Set YARN classpath to point to the jar file at spark/yarn/spark-2.3.2-yarn-shuffle.jar. Make sure this jar is present on all nodes, I copied it to hadoop/share/yarn folder
+		that is already in the classpath.
 
+	b. Add Spark_Shufle as one of the auxiliary yarn services, and point to the class
+		<property>
+			<name>yarn.nodemanager.aux-services</name>
+			<value>mapreduce_shuffle,spark_shuffle</value>
+        </property>
 
-======= Additional Workload Specific Customizations for HDFS or SPARK ==========================================================
+        <property>
+			<name>yarn.nodemanager.aux-services.spark_shuffle.class</name>
+			<value>org.apache.spark.network.yarn.YarnShuffleService</value>
+        </property>
+
+	c. Turn on using external shuffle in spark-defaults.sh
+		spark.shuffle.service.enabled           true
+
+		
+
+========== Additional Workload Specific Customizations for HDFS or SPARK
 
 1. Created a "tmpfs" RAM disk at /mnt/ramdisk with 30G on all nodes, and pointed Spark scratch space to use it. 
 How: In YARN mode, "yarn.nodemanager.local-dirs" property controls the spark scratch space.  
@@ -320,6 +336,10 @@ How: In capacity-scheduler.xml, set "yarn.scheduler.capacity.resource-calculator
 Why: Apparently the default calculator just takes memory into consideration when calculating number of containers from input configs, and not CPU: the result being 
 	spark.executor.cores or --executor.cores property of spark is not respected.
 
+
+References:
+Hadoop: https://www.linode.com/docs/databases/hadoop/how-to-install-and-set-up-hadoop-cluster/
+Spark: https://www.linode.com/docs/databases/hadoop/install-configure-run-spark-on-top-of-hadoop-yarn-cluster/
 
 
 ========================================= INTEGRATING WITH GIRAPH =================================================================
@@ -353,6 +373,40 @@ sudo git clone https://github.com/apache/giraph.git
 Helpful links:
 https://blog.cloudera.com/blog/2014/02/how-to-write-and-run-giraph-jobs-on-hadoop/
 https://yogin16.github.io/2018/04/09/giraph-hadoop-setup/
+
+
+
+======================================== LOADING VARIOUS GRAPH DATASETS IN GIRAPH ==============================================
+
+Graph datasets from various sources need some pre-processing to convert them to acceptable formats for Giraph. This includes using some custom tools (that come along with datasets)
+to convert graphs to an intermediate format, and writing simple input graph parsers in Giraph for consuming the intermediate format. 
+
+========= Facebook's Darwini Datasets "https://fb-public.app.box.com/s/f13axyrxrt00zmc4sn2vz8mid6ykm109"
+	1. Big darwini datasets have graphs broken down into multiple files in gzip format. We need to 'gunzip' each of these into normal text files. 
+		cd darwini-10b-edges/
+		gunzip part-m-*
+	2. Once unzipped, we upload the directory to hdfs 
+		hdfs dfs  -D dfs.replication=2  -put /usr/local/home/ayelam/darwini-5b-edges/  /user/ayelam/graph_inputs/
+		hdfs dfs -setrep 1 /user/ayelam/graph_inputs/darwini-5b-edges				-- To get uniform data placement with 1 replication
+		hdfs dfs -du -h /user/ayelam/graph_inputs/darwini-5b-edges					-- To see size	
+		hdfs cacheadmin -addDirective -path "/user/ayelam/graph_inputs/darwini-5b-edges" -pool cache-pool		-- Cache if necessary
+	3. Use the directory as input to Giraph, Giraph will parse through all the files.
+	4. On Giraph side, I wrote a parser that can parse this graph: org/apache/giraph/io/formats/LongDoubleFloatTextInputFormat.java
+		giraph <...> -vif org.apache.giraph.io.formats.LongDoubleFloatTextInputFormat -vip /user/ayelam/graph_inputs/darwini-5b-edges <...>
+
+
+========= Lab for Web Algorithmics' Datasets "http://law.di.unimi.it/datasets.php"
+	1. Graphs are compressed with WebGraph tool (http://webgraph.di.unimi.it/) in 'it.unimi.dsi.webgraph.BVGraph' format.  
+	2. To get webgraph running: I downloaded webgraph-<version>.jar from maven and the dependencies tarball from the above website, and added the jar to dependencies folder.
+		And I run web-graph like so: java -cp .\webgraph-deps\* it.unimi.dsi.big.webgraph.BVGraph -o -O -L .\twitter-2010
+	3. In this case, we convert the graphs downloaded from LAW website from BVGraph to ASCIIGraph format, that outputs .graph-txt file.
+		java -cp .\webgraph-deps\* it.unimi.dsi.big.webgraph.Transform identity .\twitter\twitter-2010 twitter-out1 -d it.unimi.dsi.big.webgraph.ASCIIGraph
+	4. Remove the first line (number of nodes) and prepend every line with the vertext number (i.e., line number - 1)
+		tail -n +2 twitter.graph-txt > twitter.graph-txt1
+		nl --starting-line-number=0 twitter.graph-txt1 > twitter.graph-txt 
+		
+	5. Copy this file over to hdfs (See example commands in step 2 above).
+	6. On Giraph side, use the same parser as above. (org/apache/giraph/io/formats/LongDoubleFloatTextInputFormat.java)
 
 
 

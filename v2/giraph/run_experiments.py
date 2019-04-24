@@ -366,7 +366,7 @@ def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
 def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc):
     giraph_class_name = "SimplePageRankComputation"
 
-    input_graph_files = [ "darwini-5b-edges" ]
+    input_graph_files = [ "darwini-10b-edges" ] # "uk-2007-05.graph-txt", "twitter.graph-txt", "darwini-2b-edges", "darwini-5b-edges" ]
     link_bandwidth_mbps = [10000]   # [200, 500, 1000, 2000, 3000, 5000, 8000, 10000]
     iterations = range(1, 2)
     cache_hdfs_input = False

@@ -8,19 +8,20 @@ import org.apache.spark.SparkConf
 
 // sbt build issues: https://stackoverflow.com/questions/45531198/warnings-while-building-scala-spark-project-with-sbt
 /**
-  * Sort using Spark Range Partitioner, does not write output to disk
+  Sort
+  1. Does not write output
+  2. Scales value of each input record to required factor to allow testing with bigger input records
   */
-object SortNoDisk {
+object SortNoDiskScaledInput {
 
   def main(args: Array[String]): Unit = {
     val inputPath = args(1)
+    val value_scale_factor = args(2).toInt
 
     val conf = new SparkConf().
       setMaster(args(0)).
-      setAppName("SortNoDisk")
-
+      setAppName("Sort")
     val sc = new SparkContext(conf)
-    // sc.setLogLevel("DEBUG")
 
     //https://stackoverflow.com/questions/7109943/how-to-define-orderingarraybyte
     implicit val ordering = new math.Ordering[Array[Byte]] {
@@ -53,26 +54,26 @@ object SortNoDisk {
     // taskMetrics.begin()
 
     var text_RDD: RDD[Array[Byte]] = sc.binaryRecords(inputPath,100)
-    var kv_RDD: RDD[(Array[Byte],Array[Byte])] = text_RDD.map(line => (line.slice(0,10), line.slice(10,100)))
-    kv_RDD.setName("InputRDD")
-
+    var kv_RDD: RDD[(Array[Byte],Array[Byte])] = text_RDD.map(line => (line.slice(0,10), scale_array(line, value_scale_factor)))
     text_RDD.unpersist()
     text_RDD=null
-    // kv_RDD.persist()
 
-    var sorted = kv_RDD.sortBy(_._1, true)
-    sorted.setName("SortedRDD")
-    // sorted.persist()
+    // Get size of all values, just to double-check
+    // var size = kv_RDD.aggregate(0)((acc, inp) => acc + inp._2.length, (a1, a2) => a1 + a2)
+    // println("Spark value size: " + size)
 
-    // Do not write output to disk, just call an "action" to kick off RDD computation
-    println("Spark output count: " + sorted.count())
-
-    // Print size of partitions
-    // sorted.mapPartitions(iter => Array(iter.size).iterator, true).collect().foreach(println)
-
-    // To keep the spark job alive for checking things on Web UI
-    // Thread.sleep(60000)
-    sc.stop()
+    // Do not write output to disk
+    var count = kv_RDD.sortBy(_._1, true).count()
+    println("Spark output count: " + count)
   }
+
+  def scale_array(a: Array[Byte], i: Int): Array[Byte] = {
+    var result = a
+    for(j <- 2 to i){
+      result = result ++ a
+    }
+    result
+  }
+
 }
 

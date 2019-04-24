@@ -1,7 +1,7 @@
 # Hosts file for Power Measurements experiments
 # FatTree topology
 
-127.0.0.1       localhost
+0.0.0.0         localhost
 10.1.0.1        b09-44.sysnet.ucsd.edu b09-44
 10.1.1.1        b09-42.sysnet.ucsd.edu b09-42
 10.0.0.1        b09-40.sysnet.ucsd.edu b09-40

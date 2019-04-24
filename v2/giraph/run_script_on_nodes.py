@@ -30,7 +30,7 @@ def ssh_execute_command(ssh_client, command, sudo_password = None):
     _, stdout, stderr = ssh_client.exec_command(command)
     output = str(stdout.read() + stderr.read())
     print(output)
-    return output
+    return output`
 
 
 def create_or_reset_tmpfs_ram_disk(ssh_client, root_password):
@@ -56,11 +56,11 @@ def run_script():
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
         create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
-        # ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
+        ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "shutdown -r", sudo_password=root_password)
  
-        # hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
-        # ssh_execute_command(hdp_user_ssh_client, "pkill java")
+        hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
+        ssh_execute_command(hdp_user_ssh_client, "pkill java")
 
 if __name__ == '__main__':
     run_script()

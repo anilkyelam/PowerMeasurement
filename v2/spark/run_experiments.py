@@ -2,12 +2,14 @@
 Runs power measurement experiments on the spark test cluster
 """
 
+import argparse
 import datetime
 import paramiko
 import os
 import time
 import json
 import sys
+import shutil
 import traceback
 from scp import SCPClient
 
@@ -50,6 +52,7 @@ fat_tree_hosts_file_name = "hosts_fattree"
 
 # Local constants
 local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\spark\\node-scripts"
+local_spark_src_folder = 'D:\Git\PowerMeasurement\\v2\\spark\\spark-sort'
 local_results_folder = 'D:\Power Measurements\\v2\\spark'
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
@@ -62,7 +65,7 @@ run_spark_job_file = 'run_spark_job.sh'
 
 # Creates SSH client using paramiko lib.
 def create_ssh_client(server, port, user, password):
-    client = paramiko.SSHClient()
+    client = paramiko.SSHClient() 
     client.load_system_host_keys()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     client.connect(server, port, user, password)
@@ -78,7 +81,7 @@ def ssh_execute_command(ssh_client, command, sudo_password = None):
 
     _, stdout, stderr = ssh_client.exec_command(command)
     output = str(stdout.read() + stderr.read())
-    # print(output)
+    print(output)
     return output
 
 
@@ -339,16 +342,54 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
         return None
 
 
-# Main
-def main():
-    # scala_class_name = "SortLegacy"
-    scala_class_name = "SortNoDisk"
+def copy_src_files(root_user_name, root_password):
+    print("Copying source files to NFS")
+    master_node_full_name = "{0}.{1}".format(designated_spark_driver_node, spark_nodes_dns_suffx)
+    with create_ssh_client(master_node_full_name, 22, root_user_name, root_password) as master_node_ssh_client:
+        # Make sure the directory structure exists in NFS home folder
+        create_folder_if_not_exists(master_node_ssh_client, remote_home_folder)
+        create_folder_if_not_exists(master_node_ssh_client, remote_results_folder)
 
+        # Copy source files to NFS
+        with SCPClient(master_node_ssh_client.get_transport()) as scp:
+            scp.put(local_node_scripts_folder, remote_home_folder, recursive=True)
+
+
+# Set up environment for experiments
+def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
+    set_up_on_each_node(root_user_name, root_password, fat_tree_hosts_file_name)
+    start_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+
+
+# Run experiments
+def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc):
+    scala_class_names = [ "TeraSort" ] # "SortNoDisk", "TeraSort",  "InputProperties" ]
     input_sizes_mb = [100000]
-    link_bandwidth_mbps = [0] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+    link_bandwidth_mbps = [10000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
     iterations = range(1, 2)
     cache_hdfs_input = True
 
+    # Command line arguments
+    exp_run_id = "Run-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    
+    # Run all experiments
+    for sort_type in scala_class_names:
+        for iter_ in iterations:
+            for link_bandwidth in link_bandwidth_mbps:
+                for input_size_mb in input_sizes_mb:
+                    print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
+                    run_experiment(exp_run_id, exp_run_desc, sort_type, root_user_name, root_password, 
+                        int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
+                    # time.sleep(1*60)
+
+
+def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  
+    print("Tearing down the environment...")      
+    stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+    clean_up_on_each_node(root_user_name, root_password)
+
+
+def main():
     # Get user creds from temp files
     root_user_password_info = open("root-user.pass").readline()  # One line in <user>;<password> format.
     root_user_name = root_user_password_info.split(";")[0]
@@ -357,53 +398,31 @@ def main():
     hadoop_user_name = hadoop_user_password_info.split(";")[0]
     hadoop_password = hadoop_user_password_info.split(";")[1]
 
-    # Command line arguments
-    exp_run_id = "Run-" + datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-    exp_run_desc = sys.argv[1]
+    # Parse args and call relevant action
+    parser = argparse.ArgumentParser("Runs power measurement experiments on hdfs+yarn cluster using giraph jobs")
+    parser.add_argument('--setup', action='store_true', help='sets up environment, including bringing up hadoop cluster')
+    parser.add_argument('--teardown', action='store_true', help='clean up environment, including removing hadoop cluster')
+    parser.add_argument('--refresh', action='store_true', help='copy updated source scripts to NFS')
+    parser.add_argument('--run', action='store_true', help='runs experiments')
+    parser.add_argument('--desc', action='store', help='description for the current runs')
+    args = parser.parse_args()
 
-    master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
-    master_node_ssh_client = create_ssh_client(master_node_full_name, 22, root_user_name, root_password)
+    if args.setup:
+        setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password)
+        copy_src_files(root_user_name, root_password)
 
-    try:
-        # Make sure directory structure exists in NFS home folder
-        create_folder_if_not_exists(master_node_ssh_client, remote_home_folder)
-        create_folder_if_not_exists(master_node_ssh_client, remote_results_folder)
+    if args.refresh:
+        # Refresh spark jar files and copy all scripts to NFS
+        shutil.rmtree(os.path.join(local_node_scripts_folder, "target"), ignore_errors=True)
+        shutil.copytree(os.path.join(local_spark_src_folder, "target"), os.path.join(local_node_scripts_folder, "target"))
+        copy_src_files(root_user_name, root_password)
 
-        # Copy source files to NFS
-        with SCPClient(master_node_ssh_client.get_transport()) as scp:
-            scp.put(local_node_scripts_folder, remote_home_folder, recursive=True)
+    if args.run:
+        assert args.desc is not None, 'Provide description with --desc parameter for this run!'
+        run(root_user_name, root_password, hadoop_user_name, hadoop_password, args.desc)
 
-            # Fix for gensort file losing execute permissions on copying over from windows to linux
-            remote_gensort_file_path = path_to_linux_style(os.path.join(remote_scripts_folder, "gensort"))
-            master_node_ssh_client.exec_command("chmod +x {0}".format(remote_gensort_file_path))
-
-        # Set up environment for experiments
-        set_up_on_each_node(root_user_name, root_password, fat_tree_hosts_file_name)
-        start_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
-        input("Press [Enter] to continue.")
-
-        # Run all experiments
-        for iter_ in iterations:
-            for link_bandwidth in link_bandwidth_mbps:
-                for input_size_mb in input_sizes_mb:
-                    print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
-                    run_experiment(exp_run_id, exp_run_desc, scala_class_name, root_user_name, root_password, 
-                        int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
-                    # time.sleep(1*60)
-
-    finally:
-        # Clean up
-        while True:
-            resp = input("Tear down environment? Press [Y] or [N] to continue.")
-            if resp.upper() == "Y":      
-                print("Tearing down the environment...")      
-                stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
-                clean_up_on_each_node(root_user_name, root_password)
-                break
-            elif resp.upper() == "N":
-                break
-
-        master_node_ssh_client.close()
+    if args.teardown:
+        teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password)
 
 
 if __name__ == '__main__':

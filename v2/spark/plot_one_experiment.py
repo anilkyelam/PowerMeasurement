@@ -60,6 +60,7 @@ io_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([0-9]+[\.]?[0-9]+)\s+([0-9]+[\.]?[
 power_regex = r'^([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+),([0-9]+[\.]?[0-9]+)'
 # Spark log start executor
 spark_stage_and_task_log_regex = r'^([0-9]+-[0-9]+-[0-9]+ [0-9]+:[0-9]+:[0-9]+).+stage ([0-9]+\.[0-9]+).+(b09-[0-9]+).+executor ([0-9]+)'
+spark_stage_and_task_log_regex_2 = r'^([0-9]+\/[0-9]+\/[0-9]+ [0-9]+:[0-9]+:[0-9]+).+stage ([0-9]+\.[0-9]+).+(b09-[0-9]+).+executor ([0-9]+)'
 # Spark log any line
 spark_log_generic_log_regex = r'^([0-9]+-[0-9]+-[0-9]+\ [0-9]+:[0-9]+:[0-9]+) .+$'
 
@@ -125,6 +126,9 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
             first_line = True
             date_part = None
             previous_reading_time_part = None
+            cum_net_tx_MB = 0
+            cum_net_rx_MB = 0
+
             for line in lines:
                 if first_line:
                     date_string = parse_date_from_sar_file(first_line_in_file=line)
@@ -146,11 +150,15 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                     net_in_KBps = float(matches.group(5))
                     net_out_KBps = float(matches.group(6))
 
-                    # Taking only eth0 interface for now.
-                    if net_interface == "enp101s0":
+                    # Taking only enp101s0 interface for now.
+                    if net_interface == "enp101s0":     # "lo"
                         all_readings.append([timestamp, node_name, "net_in_Mbps", net_in_KBps * 8 / 1000])
                         all_readings.append([timestamp, node_name, "net_out_Mbps", net_out_KBps * 8 / 1000])
                         all_readings.append([timestamp, node_name, "net_total_Mbps", (net_in_KBps + net_out_KBps) * 8/ 1000])
+                        cum_net_rx_MB += net_in_KBps / 1000
+                        cum_net_tx_MB += net_out_KBps / 1000
+
+            print("Total net tx and rx (MB) on node {0}: ".format(node_name), cum_net_tx_MB, cum_net_rx_MB)
 
         # Parse memory usage
         mem_full_path = os.path.join(node_results_dir, mem_readings_file_name)
@@ -243,10 +251,11 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
     if os.path.exists(spark_log_full_path):
         with open(spark_log_full_path, "r") as lines:
             for line in lines:
-                matches = re.match(spark_stage_and_task_log_regex, line)
+                matches = re.match(spark_stage_and_task_log_regex_2, line)
                 if matches:
                     time_string = matches.group(1)
-                    timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+                    timestamp = datetime.strptime(time_string, '%y/%m/%d %H:%M:%S')
+                    # timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
                     stage = float(matches.group(2))
                     node_name = matches.group(3)
 
@@ -326,16 +335,17 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
                    x_label='Time (in secs)',
                    y_label='Disk MB/sec',
                    plot_label='Writes')
+    render_subplot_by_label(ax6.twinx(), all_readings,
+                   filter_label='spark_stage',
+                   x_label='Time (in secs)',
+                   y_label='',
+                   plot_label='Spark stage',
+                   plot_color='red')
     render_subplot_by_label(ax6, all_readings,
                    filter_label='spark_tasks',
                    x_label='Time (in secs)',
                    y_label='',
                    plot_label='Number of spark tasks')
-    render_subplot_by_label(ax6, all_readings,
-                   filter_label='spark_stage',
-                   x_label='Time (in secs)',
-                   y_label='',
-                   plot_label='Spark stage')
 
     # Save the file, should be done before show()
     output_plot_file_name = "plot_{0}_{1}.png".format(experiment_setup.input_size_gb, node_name)
@@ -343,6 +353,54 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
     plt.savefig(output_full_path)
     # plt.show()
     plt.close()
+
+
+# Generates one plot for custom-selected resources
+def plot_custom_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name):
+
+    # Filter all readings for node
+    all_readings = list(filter(lambda r: r[1] == node_name, all_readings))
+
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1)
+    fig.set_size_inches(w=10,h=10)
+    fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Role: {3}".format(
+        experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps,
+        "Driver" if node_name == experiment_setup.designated_driver_node else "Executor"))
+
+    # render subplots
+    render_subplot_by_label(ax1, all_readings,
+                   filter_label='cpu_total_usage',
+                   x_label='',
+                   y_label='CPU usage % (all cores)')
+    render_subplot_by_label(ax2, all_readings,
+                   filter_label='net_in_Mbps',
+                   x_label='',
+                   y_label='Network Mbps',
+                   plot_label='In')
+    render_subplot_by_label(ax2, all_readings,
+                   filter_label='net_out_Mbps',
+                   x_label='',
+                   y_label='Network Mbps',
+                   plot_label='Out')
+    render_subplot_by_label(ax3.twinx(), all_readings,
+                   filter_label='spark_stage',
+                   x_label='Time (in secs)',
+                   y_label='',
+                   plot_label='Spark stage',
+                   plot_color='red')
+    render_subplot_by_label(ax3, all_readings,
+                   filter_label='spark_tasks',
+                   x_label='Time (in secs)',
+                   y_label='',
+                   plot_label='Number of spark tasks')
+
+    # Save the file, should be done before show()
+    output_plot_file_name = "plot_custom_{0}_{1}.png".format(experiment_setup.input_size_gb, node_name)
+    output_full_path = os.path.join(plots_dir_full_path, output_plot_file_name)
+    plt.savefig(output_full_path)
+    # plt.show()
+    plt.close()
+
 
 
 # Generates one plot for resource usages on one node
@@ -403,15 +461,14 @@ def plot_cdf_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
 
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
-def render_subplot_by_label(ax, all_readings, filter_label, x_label, y_label, plot_label=None):
+def render_subplot_by_label(ax, all_readings, filter_label, x_label, y_label, plot_label=None, plot_color=None):
     filtered_readings = list(filter(lambda r: r[2] == filter_label, all_readings))
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    if plot_label is not None:
-        ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)), label=plot_label)
-        ax.legend()
-    else:
-        ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)))
+    x = list(map(lambda r: r[0], filtered_readings))
+    y = list(map(lambda r: r[3], filtered_readings))
+    ax.plot(x, y, label=plot_label, color=plot_color)
+    ax.legend()
 
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
@@ -419,11 +476,10 @@ def render_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot
     filtered_readings = list(filter(lambda r: r[1] == filter_node, all_readings))
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    if plot_label is not None:
-        ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)), label=plot_label)
-        ax.legend()
-    else:
-        ax.plot(list(map(lambda r: r[0], filtered_readings)), list(map(lambda r: r[3], filtered_readings)))
+    x = list(map(lambda r: r[0], filtered_readings))
+    y = list(map(lambda r: r[3], filtered_readings))
+    ax.plot(x, y, label=plot_label)
+    ax.legend()
 
 
 # Generates cdf for a list 
@@ -474,6 +530,10 @@ def parse_and_plot_results(experiment_id):
 
     for node_name in experiment_setup.all_spark_nodes:
         plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name)
+        pass
+
+    for node_name in experiment_setup.all_spark_nodes:
+        plot_custom_for_one_node(plots_dir_full_path, all_readings, experiment_id, experiment_setup, node_name)
         pass
 
     for label_name in ['power_watts', 'cpu_total_usage', 'mem_usage_percent', 'net_in_Mbps', 'net_out_Mbps',

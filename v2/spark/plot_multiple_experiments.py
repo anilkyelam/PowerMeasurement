@@ -24,6 +24,7 @@ class ExperimentMetrics:
     duration = None
     total_power_all_nodes = None
     per_node_metrics_dict = None
+    stages_start_end_times = {}
 
     def __init__(self, experiment_id, experiment_setup, per_node_metrics_dict):
         self.experiment_id = experiment_id
@@ -33,8 +34,9 @@ class ExperimentMetrics:
         self.link_bandwidth_mbps = experiment_setup.link_bandwidth_mbps
         self.duration = (experiment_setup.spark_job_end_time - experiment_setup.spark_job_start_time)
         self.per_node_metrics_dict = per_node_metrics_dict
-        self.total_power_all_nodes = sum([n.total_power_consumed for n in per_node_metrics_dict.values()
-                                          if n.total_power_consumed is not None])
+        self.total_power_all_nodes = sum([n.total_power_consumed for n in per_node_metrics_dict.values() if n.total_power_consumed is not None])
+        self.total_net_in_KB_all_nodes = sum([n.total_net_in_kBps for n in per_node_metrics_dict.values() if n.total_net_in_kBps is not None])
+        self.total_net_out_KB_all_nodes = sum([n.total_net_out_kBps for n in per_node_metrics_dict.values() if n.total_net_out_kBps is not None])
 
 
 class ExperimentPerNodeMetrics:
@@ -44,6 +46,16 @@ class ExperimentPerNodeMetrics:
     total_disk_bwrites = None
     total_net_in_kBps = None
     total_net_out_kBps = None
+    per_stage_net_in_kBps = {}
+    per_stage_net_out_kBps = {}
+
+
+# Find spark stage for a timestamp given a dict with start and end times of all stages
+def find_spark_stage(stages_start_end_times, timestamp):
+    for stage, (stime, etime) in stages_start_end_times.items():
+        if stime <= timestamp <= etime:
+            return str(stage)
+    return "None"
 
 
 def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
@@ -56,7 +68,7 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
 
     # Read stages and other timestamps from spark log file
     all_timestamp_list = []
-    stages_time_stamp_list = []
+    stages_start_end_times = {}
     spark_log_full_path = os.path.join(experiment_dir_path, experiment_setup.designated_driver_node,
                                        plot_one_experiment.spark_log_file_name)
     with open(spark_log_full_path, "r") as lines:
@@ -64,21 +76,28 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
             matches = re.match(plot_one_experiment.spark_log_generic_log_regex, line)
             if matches:
                 time_string = matches.group(1)
-                timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+                timestamp = datetime.strptime(time_string, '%y/%m/%d %H:%M:%S')
+                # timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
                 all_timestamp_list.append(timestamp)
 
-            matches = re.match(plot_one_experiment.spark_stage_and_task_log_regex, line)
+            matches = re.match(plot_one_experiment.spark_stage_and_task_log_regex_2, line)
             if matches:
                 time_string = matches.group(1)
-                timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+                timestamp = datetime.strptime(time_string, '%y/%m/%d %H:%M:%S')
+                # timestamp = datetime.strptime(time_string, '%Y-%m-%d %H:%M:%S')
+
+                # Keep track of start and end times of each stage
                 stage = float(matches.group(2))
-                stages_time_stamp_list.append([stage, timestamp])
+                if stage not in stages_start_end_times.keys():
+                    stages_start_end_times[stage] = [timestamp, timestamp]
+                stages_start_end_times[stage][1] = timestamp
 
     # If spark job start time and end time is not available, use the values from spark log file
     if experiment_setup.spark_job_start_time is None or experiment_setup.spark_job_end_time is None:
         experiment_setup.spark_job_start_time = min(all_timestamp_list)
         experiment_setup.spark_job_end_time = max(all_timestamp_list)
 
+    # print(stages_start_end_times)
     per_node_metrics_dict = { node_name: ExperimentPerNodeMetrics() for node_name in experiment_setup.all_spark_nodes}
 
     '''
@@ -172,10 +191,14 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
         net_full_path = os.path.join(experiment_dir_path, node_name, plot_one_experiment.net_readings_file_name)
         sum_net_in_kBps = 0
         sum_net_out_kBps = 0
+        per_stage_net_in_kBps = {}
+        per_stage_net_out_kBps = {}
+
         with open(net_full_path, "r") as lines:
             first_line = True
             date_part = None
             previous_reading_time_part = None
+            current_spark_stage = None
             for line in lines:
                 if first_line:
                     date_string = plot_one_experiment.parse_date_from_sar_file(first_line_in_file=line)
@@ -194,18 +217,30 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
                     previous_reading_time_part = time_part
                     timestamp = date_part.replace(hour=time_part.hour, minute=time_part.minute, second=time_part.second)
                     net_interface = matches.group(2)
-                    net_in_KBps = float(matches.group(5))
-                    net_out_KBps = float(matches.group(6))
 
-                    # Taking only eth0 interface for now.
-                    if net_interface == "eth0" and (experiment_setup.spark_job_start_time < timestamp < experiment_setup.spark_job_end_time):
+                    # Taking only enp101s0 interface for now.
+                    if net_interface == "enp101s0" and (experiment_setup.spark_job_start_time < timestamp < experiment_setup.spark_job_end_time):
+                        net_in_KBps = float(matches.group(5))
+                        net_out_KBps = float(matches.group(6))
                         sum_net_in_kBps += net_in_KBps
                         sum_net_out_kBps += net_out_KBps
 
+                        # Aggregate network usage in each spark stage
+                        current_spark_stage = find_spark_stage(stages_start_end_times, timestamp)
+                        # print(timestamp, current_spark_stage, net_in_KBps, net_out_KBps)
+                        if current_spark_stage not in per_stage_net_in_kBps:    per_stage_net_in_kBps[current_spark_stage] = net_in_KBps
+                        else: per_stage_net_in_kBps[current_spark_stage] += net_in_KBps
+                        if current_spark_stage not in per_stage_net_out_kBps:   per_stage_net_out_kBps[current_spark_stage] = net_out_KBps
+                        else: per_stage_net_out_kBps[current_spark_stage] += net_out_KBps            
+
         per_node_metrics_dict[node_name].total_net_in_kBps = sum_net_in_kBps
         per_node_metrics_dict[node_name].total_net_out_kBps = sum_net_out_kBps
+        per_node_metrics_dict[node_name].per_stage_net_in_kBps = per_stage_net_in_kBps
+        per_node_metrics_dict[node_name].per_stage_net_out_kBps = per_stage_net_out_kBps
 
-    return ExperimentMetrics(experiment_id, experiment_setup, per_node_metrics_dict)
+    exp_metrics = ExperimentMetrics(experiment_id, experiment_setup, per_node_metrics_dict)
+    exp_metrics.stages_start_end_times = stages_start_end_times
+    return exp_metrics
 
 
 def plot_total_power_usage_per_run_type(run_id, exp_metrics_list, output_dir, experiment_type, node_name=None):
@@ -629,14 +664,16 @@ global_end_time = datetime.now()
 experiment_groups_filter = [
     # 4, # "First runs with TC rate-limiting"
     # "7", # "Ratelimiting for 100Gb" With more executors
-    "Run-2019-02-16-18-30-17", # Varying network rates - all CPUs working
-    # "Run-2019-02-28-12-23-00", # Using Kyro serialization 
+    # "Run-2019-02-16-18-30-17",    # Varying network rates - all CPUs working
+    # "Run-2019-02-28-12-23-00",    # Using Kyro serialization 
+    # "Run-2019-04-14-16-32-50",    "Run-2019-04-14-16-29-56", "Run-2019-04-14-16-26-48", "Run-2019-04-14-16-23-38", "Run-2019-04-14-16-19-34", # 100 GB runs with diff locality waits 0s to 10s
+    # "Run-2019-04-14-16-02-41",    "Run-2019-04-14-15-55-31", "Run-2019-04-14-15-51-13",    # 20GB runs
+    "Run-2019-04-21-16-11-21"       # Comparing time of tera vs normal sort
 ]
 input_sizes_filter = [100]
-link_rates_filter = [200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000]
+link_rates_filter = [200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000, 30000, 40000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
-
 
 # The results directory is full of folders corresponding to all the experiments ever performed.
 # This one filters relevant experiments to parse and plot.
@@ -654,32 +691,50 @@ def filter_experiments_to_consider(all_experiments):
     return experiments_to_consider
 
 
+# Print some relevant stats from collected metrics
+def print_stats(all_results, power_plots_output_dir):
+    for exp in all_results:
+        duration_str = "Run time: {0} secs".format(round(exp.duration.seconds, 1))
+        stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
+        print("{0} {1} {2}".format(exp.experiment_setup.scala_class_name, duration_str, stages_start_end_times_str))
+        # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
+        # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
+         
+        # Print total network throughput in spark stages
+        net_tx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_out_kBps.items()]
+        net_rx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_in_kBps.items()]
+        all_stages = set([s[0] for s in net_tx_by_stages_on_each_node])
+        net_tx_by_stages = sorted([(stage, sum([s[1] for s in net_tx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
+        net_rx_by_stages = sorted([(stage, sum([s[1] for s in net_rx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
+
+        # print(exp.experiment_id, duration_str, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
+        # print(exp.experiment_id, duration_str, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
+
+        # And copy the experiment to power plots output
+        # plots_dir_path = plot_one_experiment.parse_and_plot_results(exp_id)
+        # shutil.copytree(plots_dir_path, os.path.join(power_plots_output_dir, exp_id))
+        pass
+
+
 def main():
 
     # Parse results
     all_experiments = load_all_experiments(global_start_time, global_end_time)
     relevant_experiments = filter_experiments_to_consider(all_experiments)
     all_results = [get_metrics_summary_for_experiment(exp.experiment_id, exp) for exp in relevant_experiments]
+    # print(all_results)
     print("Output plots at path: " + power_plots_output_dir)
 
     if not os.path.exists(power_plots_output_dir):
         os.mkdir(power_plots_output_dir)
 
-    # Print any metrics or generate comprehensive per-node resource usage plots for each experiment
-    filtered_experiments = set([p.experiment_id for p in all_results])
-    for exp_id in filtered_experiments:
-        # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
-        # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
-        
-        # And copy the experiment 
-        # plots_dir_path = plot_one_experiment.parse_and_plot_results(exp_id)
-        # shutil.copytree(plots_dir_path, os.path.join(power_plots_output_dir, exp_id))
-        pass
+    # Print any stats we need to look at
+    print_stats(all_results, power_plots_output_dir)
 
     # Plot experiment duration by input size
     for size in input_sizes_filter:
         run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+        # plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
         pass
 
     # Plot experiment duration by experimental setup

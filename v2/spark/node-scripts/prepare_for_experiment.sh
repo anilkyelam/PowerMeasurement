@@ -68,9 +68,10 @@ if [ "${CACHE_HDFS_FILE}" == 1 ]; then
 		
 		# This initiates caching process. Ideally we would want to wait and check until it finishes, but for now
 		# we just wait and hope that it's done. (TODO: Configure this time for larger inputs)
-		sleep 300
+		sleep 60
 	
 		hdfs cacheadmin -listDirectives
+                hdfs cacheadmin -listPools cache-pool -stats
 	else
 		echo "File is cached, moving on."
 	fi
