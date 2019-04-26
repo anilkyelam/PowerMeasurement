@@ -28,9 +28,10 @@ class ExperimentSetup:
         self.spark_job_end_time = datetime.strptime(json_dict["SparkJobEndTime"], "%Y-%m-%d %H:%M:%S")
         
         self.experiment_group = str(json_dict["ExperimentGroup"])
-        self.experiment_group_desc = json_dict["ExperimentGroupDesc"]
-        self.scala_class_name = json_dict["ScalaClassName"]
-        self.input_cached_in_hdfs = json_dict["InputHdfsCached"] if "InputHdfsCached" in json_dict else None
+        self.experiment_group_desc = json_dict.get("ExperimentGroupDesc", "No description")
+        self.scala_class_name = json_dict.get("ScalaClassName", None)
+        self.input_cached_in_hdfs = json_dict.get("InputHdfsCached", None)
+        self.plot_friendly_name = json_dict.get("PlotFriendlyName", None)
 
 
 # Results base folder

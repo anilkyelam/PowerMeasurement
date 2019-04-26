@@ -327,7 +327,8 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
                 "SparkDriverNode": designated_spark_driver_node,
                 "InputSizeGb": input_size_mb/1000.0,
                 "LinkBandwidthMbps": link_bandwidth_mbps,
-                "PaddingInSecs": padding_in_secs
+                "PaddingInSecs": padding_in_secs,
+                "PlotFriendlyName": None
             }, setup_file, indent=4, sort_keys=True)
 
         # Cleanup on each node

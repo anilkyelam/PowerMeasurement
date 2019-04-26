@@ -37,7 +37,10 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit
 object TeraInputFormat {
    val KEY_LEN = 10
    val VALUE_LEN = 90
-   val RECORD_LEN : Int = KEY_LEN + VALUE_LEN
+   val VALUE_SCALE_FACTOR = 2
+   val SCALED_VALUE_LEN = VALUE_SCALE_FACTOR * VALUE_LEN
+   val INPUT_RECORD_LEN : Int = KEY_LEN + VALUE_LEN
+   val OUTPUT_RECORD_LEN : Int = KEY_LEN + SCALED_VALUE_LEN
    var lastContext : JobContext = _
    var lastResult : java.util.List[InputSplit] = _
    implicit val caseInsensitiveOrdering : Comparator[Array[Byte]] =
@@ -62,7 +65,7 @@ class TeraInputFormat extends FileInputFormat[Array[Byte], Array[Byte]] {
     private var in : FSDataInputStream = _
     private var offset: Long = 0
     private var length: Long = 0
-    private val buffer: Array[Byte] = new Array[Byte](TeraInputFormat.RECORD_LEN)
+    private val buffer: Array[Byte] = new Array[Byte](TeraInputFormat.INPUT_RECORD_LEN)
     private var key: Array[Byte] = _
     private var value: Array[Byte] = _
 
@@ -71,8 +74,8 @@ class TeraInputFormat extends FileInputFormat[Array[Byte], Array[Byte]] {
         return false
       }
       var read : Int = 0
-      while (read < TeraInputFormat.RECORD_LEN) {
-        var newRead : Int = in.read(buffer, read, TeraInputFormat.RECORD_LEN - read)
+      while (read < TeraInputFormat.INPUT_RECORD_LEN) {
+        var newRead : Int = in.read(buffer, read, TeraInputFormat.INPUT_RECORD_LEN - read)
         if (newRead == -1) {
           if (read == 0) false
           else throw new EOFException("read past eof")
@@ -83,11 +86,21 @@ class TeraInputFormat extends FileInputFormat[Array[Byte], Array[Byte]] {
         key = new Array[Byte](TeraInputFormat.KEY_LEN)
       }
       if (value == null) {
-        value = new Array[Byte](TeraInputFormat.VALUE_LEN)
+        value = new Array[Byte](TeraInputFormat.SCALED_VALUE_LEN)
       }
+
+      // Copy Key
       buffer.copyToArray(key, 0, TeraInputFormat.KEY_LEN)
-      buffer.takeRight(TeraInputFormat.VALUE_LEN).copyToArray(value, 0, TeraInputFormat.VALUE_LEN)
-      offset += TeraInputFormat.RECORD_LEN
+
+      // Copy Value from Input Record and scale its size to desired number of times
+      var iter : Int = 0
+      while (iter < TeraInputFormat.VALUE_SCALE_FACTOR){
+        // TODO: Possible CPU load in favor of memory? Should I take right into a temp variable first?
+        buffer.takeRight(TeraInputFormat.VALUE_LEN).copyToArray(value, iter * TeraInputFormat.VALUE_LEN, TeraInputFormat.VALUE_LEN)
+        iter += 1
+      }
+
+      offset += TeraInputFormat.INPUT_RECORD_LEN
       true
     }
 
@@ -98,7 +111,7 @@ class TeraInputFormat extends FileInputFormat[Array[Byte], Array[Byte]] {
       in = fs.open(p)
       val start : Long = fileSplit.getStart
       // find the offset to start at a record boundary
-      val reclen = TeraInputFormat.RECORD_LEN
+      val reclen = TeraInputFormat.INPUT_RECORD_LEN
       offset = (reclen - (start % reclen)) % reclen
       in.seek(start + offset)
       length = fileSplit.getLength

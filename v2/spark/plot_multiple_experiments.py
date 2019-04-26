@@ -2,6 +2,7 @@
 Aggregates Power and other metrics across multiple experiments and generates plots
 """
 
+import argparse
 import os
 import re
 import math
@@ -38,6 +39,9 @@ class ExperimentMetrics:
         self.total_net_in_KB_all_nodes = sum([n.total_net_in_kBps for n in per_node_metrics_dict.values() if n.total_net_in_kBps is not None])
         self.total_net_out_KB_all_nodes = sum([n.total_net_out_kBps for n in per_node_metrics_dict.values() if n.total_net_out_kBps is not None])
 
+    def get_plot_friendly_name(self):
+        return self.experiment_setup.plot_friendly_name or (self.experiment_setup.scala_class_name + ":" + self.experiment_id)
+
 
 class ExperimentPerNodeMetrics:
     total_power_consumed = None
@@ -46,8 +50,9 @@ class ExperimentPerNodeMetrics:
     total_disk_bwrites = None
     total_net_in_kBps = None
     total_net_out_kBps = None
-    per_stage_net_in_kBps = {}
-    per_stage_net_out_kBps = {}
+    net_out_kBps_time_series = None     # <timestamp, net tx per sec> dict, for network cdf plots
+    per_stage_net_in_kBps = {}          # <stage, total net rx per node>
+    per_stage_net_out_kBps = {}         # <stage, total net rx per node>
 
 
 # Find spark stage for a timestamp given a dict with start and end times of all stages
@@ -193,6 +198,7 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
         sum_net_out_kBps = 0
         per_stage_net_in_kBps = {}
         per_stage_net_out_kBps = {}
+        net_out_kBps_time_series = {}
 
         with open(net_full_path, "r") as lines:
             first_line = True
@@ -225,6 +231,9 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
                         sum_net_in_kBps += net_in_KBps
                         sum_net_out_kBps += net_out_KBps
 
+                        # Record net tx individual measurements for network cdf plot
+                        net_out_kBps_time_series[timestamp] = net_out_KBps
+
                         # Aggregate network usage in each spark stage
                         current_spark_stage = find_spark_stage(stages_start_end_times, timestamp)
                         # print(timestamp, current_spark_stage, net_in_KBps, net_out_KBps)
@@ -237,6 +246,7 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
         per_node_metrics_dict[node_name].total_net_out_kBps = sum_net_out_kBps
         per_node_metrics_dict[node_name].per_stage_net_in_kBps = per_stage_net_in_kBps
         per_node_metrics_dict[node_name].per_stage_net_out_kBps = per_stage_net_out_kBps
+        per_node_metrics_dict[node_name].net_out_kBps_time_series = net_out_kBps_time_series
 
     exp_metrics = ExperimentMetrics(experiment_id, experiment_setup, per_node_metrics_dict)
     exp_metrics.stages_start_end_times = stages_start_end_times
@@ -562,6 +572,48 @@ def plot_total_network_usage_by_input_size(run_id, exp_metrics_list, output_dir,
     plt.savefig(output_full_path)
 
 
+def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=None):
+    """
+    Plots cdf lines for network throughput rates for given experiments.
+    If node_name is not None, filters for network throughput observed on a single (specified) node.
+    """
+
+    fig, ax = plt.subplots(1, 1)
+    fig.suptitle("CDF of network throughput " +
+                 ("on node {0}".format(node_name) if node_name else "on all nodes"))
+
+    for exp in exp_metrics_list:
+        net_out_readings_kBps = exp.per_node_metrics_dict[node_name].net_out_kBps_time_series.values() if node_name \
+            else [reading for p in exp.per_node_metrics_dict.values() for reading in p.net_out_kBps_time_series.values()]
+
+        # print("Total net tx kB: " + str(sum(net_out_readings_kBps)))
+        net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps]
+        cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
+
+        ax.set_xlabel("Network rate mbps")
+        ax.set_ylabel("CDF")
+        ax.plot(cdf_x, cdf_y, label='{0}'.format(exp.get_plot_friendly_name()))
+
+        # if exp.experiment_setup.scala_class_name == "SortNoDisk":
+        #     reduce_phase = exp.stages_start_end_times[2]
+        #     net_out_readings_kBps = [reading for p in exp.per_node_metrics_dict.values() \
+        #                             for time, reading in p.net_out_kBps_time_series.items() \
+        #                             if reduce_phase[0] < time < reduce_phase[1]]                
+        #     print("Total net tx kB (reduce phase): " + str(sum(net_out_readings_kBps)))
+        #     net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps]
+        #     cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
+        #     ax.set_xlabel("Network rate mbps")
+        #     ax.set_ylabel("CDF")
+        #     ax.plot(cdf_x, cdf_y, label='SortNoDisk (Reduce)')
+
+    plt.legend()
+    # plt.show()
+
+    output_plot_file_name = "network_cdf_{0}_mB_{1}.png".format(node_name if node_name else "total", run_id)
+    output_full_path = os.path.join(output_dir, output_plot_file_name)
+    plt.savefig(output_full_path)
+
+
 def plot_exp_duration_per_run_type(run_id, exp_metrics_list, output_dir, experiment_group):
     """
     Plots experiment duration for different input sizes from experiments of same type (same experimental setup).
@@ -668,7 +720,8 @@ experiment_groups_filter = [
     # "Run-2019-02-28-12-23-00",    # Using Kyro serialization 
     # "Run-2019-04-14-16-32-50",    "Run-2019-04-14-16-29-56", "Run-2019-04-14-16-26-48", "Run-2019-04-14-16-23-38", "Run-2019-04-14-16-19-34", # 100 GB runs with diff locality waits 0s to 10s
     # "Run-2019-04-14-16-02-41",    "Run-2019-04-14-15-55-31", "Run-2019-04-14-15-51-13",    # 20GB runs
-    "Run-2019-04-21-16-11-21"       # Comparing time of tera vs normal sort
+    # "Run-2019-04-22-15-35-54",       # Comparing time of tera vs normal sort
+    "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",
 ]
 input_sizes_filter = [100]
 link_rates_filter = [200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000, 30000, 40000]
@@ -696,7 +749,7 @@ def print_stats(all_results, power_plots_output_dir):
     for exp in all_results:
         duration_str = "Run time: {0} secs".format(round(exp.duration.seconds, 1))
         stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
-        print("{0} {1} {2}".format(exp.experiment_setup.scala_class_name, duration_str, stages_start_end_times_str))
+        print("{0} {1} {2} {3}".format(exp.experiment_id, exp.experiment_setup.scala_class_name, duration_str, stages_start_end_times_str))
         # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
         # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
          
@@ -723,61 +776,83 @@ def main():
     relevant_experiments = filter_experiments_to_consider(all_experiments)
     all_results = [get_metrics_summary_for_experiment(exp.experiment_id, exp) for exp in relevant_experiments]
     # print(all_results)
-    print("Output plots at path: " + power_plots_output_dir)
 
+    print("Output plots at path: " + power_plots_output_dir)
     if not os.path.exists(power_plots_output_dir):
         os.mkdir(power_plots_output_dir)
 
-    # Print any stats we need to look at
-    print_stats(all_results, power_plots_output_dir)
+    # Parse args and call relevant action
+    parser = argparse.ArgumentParser("Generates different kinds of plots from results across different experiments")
+    parser.add_argument('--printstats', action='store_true', help='Prints some experiment aggregate statistics like duration, total network usage, etc.')
+    parser.add_argument('--all', action='store_true', help='Generates all kinds of plots available')
+    parser.add_argument('--power', action='store_true', help='Generates plots for total power consumed for specified runs')
+    parser.add_argument('--network', action='store_true', help='Generates plots for total network usage for specified runs')
+    parser.add_argument('--diskio', action='store_true', help='Generates plots for total disk usage for specified runs')
+    parser.add_argument('--runtime', action='store_true', help='Generates plots for job execution times for specified runs')
+    parser.add_argument('--netcdf', action='store_true', help='Generates a cdf plot for network tx throughput for specified runs')
+    args = parser.parse_args()
 
-    # Plot experiment duration by input size
-    for size in input_sizes_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
-        pass
+    # Print any stats we might want to look at
+    if args.printstats:
+        print_stats(all_results, power_plots_output_dir)
 
-    # Plot experiment duration by experimental setup
-    for exp_grp_id in experiment_groups_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_exp_duration_per_run_type(run_id, all_results, power_plots_output_dir, experiment_group=exp_grp_id)
-        pass
+    if args.all or args.runtime:
+        # Plot experiment duration by input size
+        for size in input_sizes_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            plot_exp_duration_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+            pass
 
-    # Plot power results per input size
-    for size in input_sizes_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_power_usage_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
-        pass
+        # Plot experiment duration by experimental setup
+        for exp_grp_id in experiment_groups_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            # plot_exp_duration_per_run_type(run_id, all_results, power_plots_output_dir, experiment_group=exp_grp_id)
+            pass
 
-    # Plot power results by experimental setup
-    for exp_type in experiment_groups_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_power_usage_per_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
-        pass
+    if args.all or args.power:
+        # Plot power results per input size
+        for size in input_sizes_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            plot_total_power_usage_per_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+            pass
 
-    # Plot disk usage by input size
-    for size in input_sizes_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_disk_usage_by_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
-        pass
+        # Plot power results by experimental setup
+        for exp_type in experiment_groups_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            # plot_total_power_usage_per_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
+            pass
 
-    # Plot disk usage by experimental setup
-    for exp_type in experiment_groups_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_disk_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
-        pass
-    
-    # Plot netwokr usage by input size
-    for size in input_sizes_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_network_usage_by_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
-        pass
+    if args.all or args.diskio:
+        # Plot disk usage by input size
+        for size in input_sizes_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            plot_total_disk_usage_by_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+            pass
 
-    # Plot network usage by experimental setup
-    for exp_type in experiment_groups_filter:
-        run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
-        # plot_total_network_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
-        pass
+        # Plot disk usage by experimental setup
+        for exp_type in experiment_groups_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            # plot_total_disk_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
+            pass
+        
+    if args.all or args.network:
+        # Plot netwokr usage by input size
+        for size in input_sizes_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            plot_total_network_usage_by_input_size(run_id, all_results, power_plots_output_dir, input_size_gb=size)
+            pass
+
+        # Plot network usage by experimental setup
+        for exp_type in experiment_groups_filter:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            # plot_total_network_usage_by_run_type(run_id, all_results, power_plots_output_dir, experiment_type=exp_type)
+            pass
+
+    if args.all or args.netcdf:
+            run_id = datetime.now().strftime("%Y-%m-%d-%H-%M-%S-%f")
+            plot_cdf_network_throughput(run_id, all_results, power_plots_output_dir, node_name=None)
+            pass
+
 
 if __name__ == "__main__":
     main()
