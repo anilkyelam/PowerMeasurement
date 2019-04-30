@@ -159,8 +159,6 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                         cum_net_rx_MB += net_in_KBps / 1000
                         cum_net_tx_MB += net_out_KBps / 1000
 
-            print("Total net tx and rx (MB) on node {0}: ".format(node_name), cum_net_tx_MB, cum_net_rx_MB)
-
         # Parse memory usage
         mem_full_path = os.path.join(node_results_dir, mem_readings_file_name)
 
@@ -307,15 +305,18 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
     render_subplot_by_label(ax1, all_readings,
                    filter_label='power_watts',
                    x_label='',
-                   y_label='Power (units?)')
+                   y_label='Power (units?)',
+                   plot_label='Power')
     render_subplot_by_label(ax2, all_readings,
                    filter_label='cpu_total_usage',
                    x_label='',
-                   y_label='CPU usage % (all cores)')
+                   y_label='CPU usage % (all cores)',
+                   plot_label='CPU')
     render_subplot_by_label(ax3, all_readings,
                    filter_label='mem_usage_percent',
                    x_label='',
-                   y_label='Memory used %')
+                   y_label='Memory used %',
+                   plot_label='Memory')
     render_subplot_by_label(ax4, all_readings,
                    filter_label='net_in_Mbps',
                    x_label='',
@@ -372,7 +373,8 @@ def plot_custom_for_one_node(plots_dir_full_path, all_readings, experiment_id, e
     render_subplot_by_label(ax1, all_readings,
                    filter_label='cpu_total_usage',
                    x_label='',
-                   y_label='CPU usage % (all cores)')
+                   y_label='CPU usage % (all cores)',
+                   plot_label='CPU')
     render_subplot_by_label(ax2, all_readings,
                    filter_label='net_in_Mbps',
                    x_label='',
@@ -445,12 +447,10 @@ def plot_cdf_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
         experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps, label_name))
 
     # render cdf subplots
-    for node_name in ["b09-38"]: # experiment_setup.all_spark_nodes:
-        render_cdf_subplot_by_node(ax, all_readings,
-                        filter_node=node_name,
-                        x_label=label_name,
-                        y_label='CDF',
-                        plot_label=node_name)
+    render_cdf_subplot_by_node(ax, all_readings,
+                    # filter_node=node_name,
+                    x_label=label_name,
+                    y_label='CDF')
         # plt.show()
 
     # Save the file, should be done before show()
@@ -495,11 +495,10 @@ def gen_cdf(np_array, num_bin):
 
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
-def render_cdf_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot_label=None):
-    filtered_readings = list(filter(lambda r: r[1] == filter_node, all_readings))
+def render_cdf_subplot_by_node(ax, all_readings, x_label, y_label, plot_label=None):
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    all_values = [ r[3] for r in filtered_readings ]
+    all_values = [ r[3] for r in all_readings ]
     x,y = gen_cdf(all_values, 100)
     if plot_label is not None:
         ax.plot(x, y, label=plot_label)

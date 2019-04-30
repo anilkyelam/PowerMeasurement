@@ -24,7 +24,7 @@ def create_ssh_client(server, port, user, password):
 def ssh_execute_command(ssh_client, command, sudo_password = None):
     
     if sudo_password:
-        run_as_sudo_prefix = 'echo {0} | sudo -S '.format(sudo_password)
+        run_as_sudo_prefix = 'echo "{0}" | sudo -S '.format(sudo_password)
         command = run_as_sudo_prefix + command
 
     _, stdout, stderr = ssh_client.exec_command(command)
@@ -56,12 +56,12 @@ def run_script():
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
         # create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
-        ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
-        # ssh_execute_command(ssh_client, "shutdown -r", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "ps -aux | grep sar", sudo_password=root_password)
  
         hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
         # ssh_execute_command(hdp_user_ssh_client, "pkill java")
-        ssh_execute_command(hdp_user_ssh_client, "ls /usr/local/home/hadoop/hadoop/external-jars/*")
+        # ssh_execute_command(hdp_user_ssh_client, "ls /usr/local/home/hadoop/hadoop/external-jars/*")
 
 
 if __name__ == '__main__':

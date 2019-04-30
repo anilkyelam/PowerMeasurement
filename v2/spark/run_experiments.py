@@ -76,7 +76,7 @@ def create_ssh_client(server, port, user, password):
 def ssh_execute_command(ssh_client, command, sudo_password = None):
     
     if sudo_password:
-        run_as_sudo_prefix = 'echo {0} | sudo -S '.format(sudo_password)
+        run_as_sudo_prefix = 'echo "{0}" | sudo -S '.format(sudo_password)
         command = run_as_sudo_prefix + command
 
     _, stdout, stderr = ssh_client.exec_command(command)
@@ -242,7 +242,7 @@ def refresh_link_interface(ssh_client, password_for_sudo):
 
 # Runs a single experiment with specific configurations like input size, network rate, etc.
 # Prepares necessary setup to collect readings and runs spark jobs.
-def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_password, input_size_mb, 
+def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, user_name, user_password, input_size_mb, 
                     link_bandwidth_mbps, cache_hdfs_file):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
@@ -328,7 +328,7 @@ def run_experiment(exp_run_id, exp_run_desc, scala_class_name, user_name, user_p
                 "InputSizeGb": input_size_mb/1000.0,
                 "LinkBandwidthMbps": link_bandwidth_mbps,
                 "PaddingInSecs": padding_in_secs,
-                "PlotFriendlyName": None
+                "PlotFriendlyName": exp_plot_desc
             }, setup_file, indent=4, sort_keys=True)
 
         # Cleanup on each node
@@ -363,11 +363,11 @@ def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
 
 
 # Run experiments
-def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc):
+def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc, exp_plot_desc):
     scala_class_names = [ "TeraSort" ] # "SortNoDisk", "TeraSort",  "InputProperties" ]
     input_sizes_mb = [100000]
     link_bandwidth_mbps = [10000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
-    iterations = range(1, 2)
+    iterations = range(1, 5)
     cache_hdfs_input = True
 
     # Command line arguments
@@ -379,7 +379,7 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
             for link_bandwidth in link_bandwidth_mbps:
                 for input_size_mb in input_sizes_mb:
                     print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
-                    run_experiment(exp_run_id, exp_run_desc, sort_type, root_user_name, root_password, 
+                    run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, sort_type, root_user_name, root_password, 
                         int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
                     # time.sleep(1*60)
 
@@ -400,12 +400,13 @@ def main():
     hadoop_password = hadoop_user_password_info.split(";")[1]
 
     # Parse args and call relevant action
-    parser = argparse.ArgumentParser("Runs power measurement experiments on hdfs+yarn cluster using giraph jobs")
+    parser = argparse.ArgumentParser("Runs power measurement experiments on hdfs+yarn cluster using spark jobs")
     parser.add_argument('--setup', action='store_true', help='sets up environment, including bringing up hadoop cluster')
     parser.add_argument('--teardown', action='store_true', help='clean up environment, including removing hadoop cluster')
     parser.add_argument('--refresh', action='store_true', help='copy updated source scripts to NFS')
     parser.add_argument('--run', action='store_true', help='runs experiments')
     parser.add_argument('--desc', action='store', help='description for the current runs')
+    parser.add_argument('--plotname', action='store', help='plot friendly name for the experiment - used in plot legends')
     args = parser.parse_args()
 
     if args.setup:
@@ -420,7 +421,7 @@ def main():
 
     if args.run:
         assert args.desc is not None, 'Provide description with --desc parameter for this run!'
-        run(root_user_name, root_password, hadoop_user_name, hadoop_password, args.desc)
+        run(root_user_name, root_password, hadoop_user_name, hadoop_password, args.desc, args.plotname)
 
     if args.teardown:
         teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password)

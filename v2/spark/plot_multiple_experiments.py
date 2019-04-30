@@ -579,18 +579,25 @@ def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=
     """
 
     fig, ax = plt.subplots(1, 1)
-    fig.suptitle("CDF of network throughput " +
+    # fig.set_size_inches(w=10,h=10)
+    fig.suptitle("CDF of network throughput (reduce phase) " +
                  ("on node {0}".format(node_name) if node_name else "on all nodes"))
 
     for exp in exp_metrics_list:
-        net_out_readings_kBps = exp.per_node_metrics_dict[node_name].net_out_kBps_time_series.values() if node_name \
-            else [reading for p in exp.per_node_metrics_dict.values() for reading in p.net_out_kBps_time_series.values()]
+        if exp.experiment_setup.scala_class_name == "SortNoDisk":
+            continue
+        
+        # Just plot the reduce phase, as no network happens in map phase
+        reduce_phase = exp.stages_start_end_times[1]
+        net_out_readings_kBps = exp.per_node_metrics_dict[node_name].net_out_kBps_time_series.items() if node_name \
+            else [reading for p in exp.per_node_metrics_dict.values() for reading in p.net_out_kBps_time_series.items()]
+        net_out_readings_kBps_reduce_phase = [v for k,v in net_out_readings_kBps if reduce_phase[0] < k < reduce_phase[1]]
 
-        # print("Total net tx kB: " + str(sum(net_out_readings_kBps)))
-        net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps]
+        # print("Total net tx kB: " + str(sum(net_out_readings_kBps_reduce_phase)))
+        net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps_reduce_phase]
         cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
 
-        ax.set_xlabel("Network rate mbps")
+        ax.set_xlabel("Network throughput mbps")
         ax.set_ylabel("CDF")
         ax.plot(cdf_x, cdf_y, label='{0}'.format(exp.get_plot_friendly_name()))
 
@@ -721,10 +728,16 @@ experiment_groups_filter = [
     # "Run-2019-04-14-16-32-50",    "Run-2019-04-14-16-29-56", "Run-2019-04-14-16-26-48", "Run-2019-04-14-16-23-38", "Run-2019-04-14-16-19-34", # 100 GB runs with diff locality waits 0s to 10s
     # "Run-2019-04-14-16-02-41",    "Run-2019-04-14-15-55-31", "Run-2019-04-14-15-51-13",    # 20GB runs
     # "Run-2019-04-22-15-35-54",       # Comparing time of tera vs normal sort
-    "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",
+    # "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",   # Comparing impact of different GCs and external shuffle service using netcdf option
+    # "Run-2019-04-29-17-12-49", "Run-2019-04-29-17-34-31", "Run-2019-04-29-17-46-00", "Run-2019-04-29-17-54-15", 
+    "Run-2019-04-29-18-00-54",
+    "Run-2019-04-29-18-12-17", 
+    # "Run-2019-04-29-18-26-34",
+    # "Run-2019-04-29-18-36-02"
+
 ]
 input_sizes_filter = [100]
-link_rates_filter = [200, 500, 1000, 2000, 3000, 4000, 5000, 6000, 10000, 30000, 40000]
+link_rates_filter = [10000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
 

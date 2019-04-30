@@ -37,8 +37,8 @@ import org.apache.hadoop.mapreduce.lib.input.FileSplit
 object TeraInputFormat {
    val KEY_LEN = 10
    val VALUE_LEN = 90
-   val VALUE_SCALE_FACTOR = 2
-   val SCALED_VALUE_LEN = VALUE_SCALE_FACTOR * VALUE_LEN
+   val VALUE_SCALE_FACTOR = 1
+   val SCALED_VALUE_LEN : Int = VALUE_SCALE_FACTOR * VALUE_LEN
    val INPUT_RECORD_LEN : Int = KEY_LEN + VALUE_LEN
    val OUTPUT_RECORD_LEN : Int = KEY_LEN + SCALED_VALUE_LEN
    var lastContext : JobContext = _
