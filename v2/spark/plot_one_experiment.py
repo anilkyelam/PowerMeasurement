@@ -484,10 +484,21 @@ def render_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot
 
 
 # Generates cdf for a list 
-def gen_cdf(np_array, num_bin):
+def gen_cdf_curve(np_array, num_bin):
    array = np.sort(np_array)
-   h, edges = np.histogram(array, density=True, bins=num_bin )
+   h, edges = np.histogram(array, density=True, bins=num_bin)
    h = np.cumsum(h)/np.cumsum(h).max()
+   x = edges.repeat(2)[:-1]
+   y = np.zeros_like(x)
+   y[1:] = h.repeat(2)
+   return x, y
+
+
+# Generates cumulative sum curve for a list
+def gen_cumsum_curve(np_array, num_bin):
+   array = np.sort(np_array)
+   h, edges = np.histogram(array, bins=num_bin)
+   h = np.cumsum(h)
    x = edges.repeat(2)[:-1]
    y = np.zeros_like(x)
    y[1:] = h.repeat(2)
@@ -499,7 +510,7 @@ def render_cdf_subplot_by_node(ax, all_readings, x_label, y_label, plot_label=No
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
     all_values = [ r[3] for r in all_readings ]
-    x,y = gen_cdf(all_values, 100)
+    x,y = gen_cdf_curve(all_values, 100)
     if plot_label is not None:
         ax.plot(x, y, label=plot_label)
         ax.legend()

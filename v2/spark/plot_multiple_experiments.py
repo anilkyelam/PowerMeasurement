@@ -580,7 +580,7 @@ def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=
 
     fig, ax = plt.subplots(1, 1)
     # fig.set_size_inches(w=10,h=10)
-    fig.suptitle("CDF of network throughput (reduce phase) " +
+    fig.suptitle("Cuml count of network readings (reduce phase) " +
                  ("on node {0}".format(node_name) if node_name else "on all nodes"))
 
     for exp in exp_metrics_list:
@@ -595,10 +595,12 @@ def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=
 
         # print("Total net tx kB: " + str(sum(net_out_readings_kBps_reduce_phase)))
         net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps_reduce_phase]
-        cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
+        # cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
+        cdf_x, cdf_y = plot_one_experiment.gen_cumsum_curve(net_out_readings_mbps, 1000)
+        # cdf_y = [y/8 for y in cdf_y]
 
         ax.set_xlabel("Network throughput mbps")
-        ax.set_ylabel("CDF")
+        ax.set_ylabel("Cumulative Count")
         ax.plot(cdf_x, cdf_y, label='{0}'.format(exp.get_plot_friendly_name()))
 
         # if exp.experiment_setup.scala_class_name == "SortNoDisk":
@@ -720,7 +722,7 @@ def load_all_experiments(start_time, end_time):
 power_plots_output_dir = plot_one_experiment.results_base_dir + "\\PowerPlots\\" + datetime.now().strftime("%m-%d")
 global_start_time = datetime.strptime('2019-02-04 00:00:00', "%Y-%m-%d %H:%M:%S")
 global_end_time = datetime.now()
-experiment_groups_filter = [
+experiments_filter = [
     # 4, # "First runs with TC rate-limiting"
     # "7", # "Ratelimiting for 100Gb" With more executors
     # "Run-2019-02-16-18-30-17",    # Varying network rates - all CPUs working
@@ -729,15 +731,12 @@ experiment_groups_filter = [
     # "Run-2019-04-14-16-02-41",    "Run-2019-04-14-15-55-31", "Run-2019-04-14-15-51-13",    # 20GB runs
     # "Run-2019-04-22-15-35-54",       # Comparing time of tera vs normal sort
     # "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",   # Comparing impact of different GCs and external shuffle service using netcdf option
-    # "Run-2019-04-29-17-12-49", "Run-2019-04-29-17-34-31", "Run-2019-04-29-17-46-00", "Run-2019-04-29-17-54-15", 
-    "Run-2019-04-29-18-00-54",
-    "Run-2019-04-29-18-12-17", 
-    # "Run-2019-04-29-18-26-34",
-    # "Run-2019-04-29-18-36-02"
-
+    # "Run-2019-04-29-17-12-49", "Run-2019-04-29-17-46-00", "Run-2019-04-30-22-48-34"     # Diff between g1gc, parallel gc and parallel gc with Xms 100g
+    "Exp-2019-05-01-00-12-33", "Exp-2019-04-30-23-16-38"      # Network cdf for 10 vs 40gbps in case of parallel gc with Xms 100g 
+    # "Run-2019-04-30-23-21-34", "Run-2019-04-30-23-24-03", "Run-2019-04-30-23-31-34", "Run-2019-05-01-00-09-21", "Run-2019-05-01-00-20-20", # 10 vs 40Gbps 10 runs each.
 ]
 input_sizes_filter = [100]
-link_rates_filter = [10000]
+link_rates_filter = [10000, 40000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
 
@@ -746,9 +745,9 @@ link_rates_filter = [10000]
 def filter_experiments_to_consider(all_experiments):
     experiments_to_consider = []
 
-    for exp_grp_id in experiment_groups_filter:
+    for exp_or_run_id in experiments_filter:
         for experiment in all_experiments:
-            if experiment.experiment_group == exp_grp_id:
+            if experiment.experiment_id == exp_or_run_id or experiment.experiment_group == exp_or_run_id:
                 if experiment.input_size_gb in input_sizes_filter:
                     if experiment.link_bandwidth_mbps in link_rates_filter:
                         # print(experiment.input_size_gb, experiment.link_bandwidth_mbps)
@@ -757,29 +756,38 @@ def filter_experiments_to_consider(all_experiments):
     return experiments_to_consider
 
 
+# Print some statistics on total network throughput in spark stages
+def print_network_usage_stats(exp_result):
+    exp = exp_result
+    net_tx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_out_kBps.items()]
+    net_rx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_in_kBps.items()]
+    all_stages = set([s[0] for s in net_tx_by_stages_on_each_node])
+    net_tx_by_stages = sorted([(stage, sum([s[1] for s in net_tx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
+    net_rx_by_stages = sorted([(stage, sum([s[1] for s in net_rx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
+
+    # print(exp.experiment_id, duration_str, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
+    # print(exp.experiment_id, duration_str, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
+
+
 # Print some relevant stats from collected metrics
 def print_stats(all_results, power_plots_output_dir):
     for exp in all_results:
-        duration_str = "Run time: {0} secs".format(round(exp.duration.seconds, 1))
+        duration_str = "Run time: {0} secs".format(round(exp.duration.total_seconds(), 2))
         stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
-        print("{0} {1} {2} {3}".format(exp.experiment_id, exp.experiment_setup.scala_class_name, duration_str, stages_start_end_times_str))
+        print("{0} {1} {2} {3}".format(exp.experiment_id, exp.experiment_setup.plot_friendly_name, duration_str, stages_start_end_times_str))
         # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
         # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
          
-        # Print total network throughput in spark stages
-        net_tx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_out_kBps.items()]
-        net_rx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_in_kBps.items()]
-        all_stages = set([s[0] for s in net_tx_by_stages_on_each_node])
-        net_tx_by_stages = sorted([(stage, sum([s[1] for s in net_tx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
-        net_rx_by_stages = sorted([(stage, sum([s[1] for s in net_rx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
-
-        # print(exp.experiment_id, duration_str, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
-        # print(exp.experiment_id, duration_str, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
+        # print_network_usage_stats(exp)
 
         # And copy the experiment to power plots output
         # plots_dir_path = plot_one_experiment.parse_and_plot_results(exp_id)
         # shutil.copytree(plots_dir_path, os.path.join(power_plots_output_dir, exp_id))
         pass
+
+    for link_rate in link_rates_filter:
+        job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results if exp.link_bandwidth_mbps == link_rate]
+        print("{0}Gbps => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, np.mean(job_times), round(np.std(job_times), 1)))
 
 
 def main():

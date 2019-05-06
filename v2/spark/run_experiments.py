@@ -273,8 +273,8 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
                 clear_page_inode_dentries_cache(ssh_client, user_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                reset_network_rate_limit(ssh_client, user_password)
-                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
+                # reset_network_rate_limit(ssh_client, user_password)
+                # set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
 
                 start_sar_readings(ssh_client, node_exp_folder_path)
 
@@ -365,9 +365,9 @@ def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
 # Run experiments
 def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc, exp_plot_desc):
     scala_class_names = [ "TeraSort" ] # "SortNoDisk", "TeraSort",  "InputProperties" ]
-    input_sizes_mb = [100000]
-    link_bandwidth_mbps = [10000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
-    iterations = range(1, 5)
+    input_sizes_mb = [200000]
+    link_bandwidth_mbps = [40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+    iterations = range(1, 2)
     cache_hdfs_input = True
 
     # Command line arguments
@@ -386,7 +386,7 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
 
 def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  
     print("Tearing down the environment...")      
-    stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+    # stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
     clean_up_on_each_node(root_user_name, root_password)
 
 

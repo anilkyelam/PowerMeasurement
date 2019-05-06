@@ -18,8 +18,13 @@
 package PowerMeasurements
 
 import java.util.Comparator
+
 import com.google.common.primitives.UnsignedBytes
 import org.apache.spark.{SparkConf, SparkContext}
+import org.apache.spark.storage.StorageLevel
+import scala.collection.mutable.ListBuffer
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * This is a great example program to stress test Spark's shuffle mechanism.
@@ -34,17 +39,7 @@ object TeraSort {
   def main(args: Array[String]) {
 
     if (args.length < 2) {
-      println("Usage:")
-      println("DRIVER_MEMORY=[mem] spark-submit " +
-        "com.github.ehiggs.spark.terasort.TeraSort " +
-        "spark-terasort-1.0-SNAPSHOT-with-dependencies.jar " +
-        "[input-file]")
-      println(" ")
-      println("Example:")
-      println("DRIVER_MEMORY=50g spark-submit " +
-        "com.github.ehiggs.spark.terasort.TeraSort " +
-        "spark-terasort-1.0-SNAPSHOT-with-dependencies.jar " +
-        "/home/myuser/terasort_in")
+      println("Requires two arguments, SparkMaster and Input size or file path")
       System.exit(0)
     }
 
@@ -53,11 +48,29 @@ object TeraSort {
       setAppName("TeraSort")
     val sc = new SparkContext(conf)
 
-    // Process command line arguments
-    val inputFile = args(1)
-    // val outputFile = args(1)
+    // Processing input from command line arguments
+    var input_path:String = null
+    try {
+      val input_size_gb = args(1).toInt
+      if (input_size_gb > 200 || input_size_gb % 20 != 0){
+        println("If specifying input size in gb, provide a multiple of 20gb and make sure it is not above 200gb!")
+        System.exit(-1)
+      }
 
-    val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraInputFormat](inputFile)
+      val num_parts = input_size_gb / 20
+      var i : Int = 0
+      input_path = "/user/ayelam/sort_inputs/200000mb/part_{0}_200000mb.input".format(i)
+      while (i < num_parts-1){
+        i += 1
+        input_path += ",/user/ayelam/sort_inputs/200000mb/part_{0}_200000mb.input".format(i)
+      }
+    } catch {
+      // If argument is not a number, consider it a path to input file or folder
+      case e: NumberFormatException => input_path = args(0)
+    }
+    println("Loading input files from path(s): " + input_path)
+
+    val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraInputFormat](input_path)
     dataset.setName("InputRDD")
     // dataset.persist()
     // dataset.mapPartitions(iter => Array(iter.size).iterator, true).collect().foreach(println)

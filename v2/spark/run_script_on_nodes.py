@@ -55,11 +55,11 @@ def run_script():
         ssh_client = create_ssh_client(node_full_name, 22, root_user_name, root_password)
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
-        # create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
-        # ssh_execute_command(ssh_client, "ps -u hadoop", sudo_password=root_password)
+        #create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
+        ssh_execute_command(ssh_client, "du -hs /mnt/ramdisk/", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "ps -aux | grep sar", sudo_password=root_password)
  
-        hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
+        # hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
         # ssh_execute_command(hdp_user_ssh_client, "pkill java")
         # ssh_execute_command(hdp_user_ssh_client, "ls /usr/local/home/hadoop/hadoop/external-jars/*")
 
