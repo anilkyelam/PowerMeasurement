@@ -39,7 +39,7 @@ def port_to_svc(port):
 
 # Generte plots for memory bandwidth readings taken from a node during a spark sort run
 def plot_mem_bandwidth():
-    experiment_id = "Exp-2019-02-19-10-02-33"
+    experiment_id = "Exp-2019-05-09-16-24-14" # "Exp-2019-05-09-16-29-38" # "Exp-2019-02-19-10-02-33"
     experiment_dir_path = os.path.join(plot_one_experiment.results_base_dir, experiment_id)
     mem_bw_file_path = os.path.join(experiment_dir_path, "mb_output")
     values = Counter()
@@ -53,22 +53,22 @@ def plot_mem_bandwidth():
                 values[i] = value
                 i += 1
     
-    # fig, ax = plt.subplots(1, 1)
-    # fig.suptitle("Local Mem Bandwidth ")
-    # ax.set_xlabel("Seconds")
-    # ax.set_ylabel("MB/s")
-    # ax.plot(values.keys(), values.values())
-    # plt.show()
-
     fig, ax = plt.subplots(1, 1)
-    fig.suptitle("Mem access rate for Spark Sort 100GB")
-    ax.set_xlabel("Mem access rate MB/s")
-    ax.set_ylabel("CDF")
-    readings = list(values.values())
-    readings = [r for r in readings if r > 10]
-    x, y = plot_one_experiment.gen_cdf(readings, 1000)
-    ax.plot(x, y)
+    fig.suptitle("Local Mem Bandwidth ")
+    ax.set_xlabel("Seconds")
+    ax.set_ylabel("MB/s")
+    ax.plot(values.keys(), values.values())
     plt.show()
+
+    # fig, ax = plt.subplots(1, 1)
+    # fig.suptitle("Mem access rate for Spark Sort 100GB")
+    # ax.set_xlabel("Mem access rate MB/s")
+    # ax.set_ylabel("CDF")
+    # readings = list(values.values())
+    # readings = [r for r in readings if r > 10]
+    # x, y = plot_one_experiment.gen_cdf_curve(readings, 1000)
+    # ax.plot(x, y)
+    # plt.show()
 
 
 # Plots to analyze network bandwidth breakdowm per service network packet trace collected from a node 
@@ -150,5 +150,5 @@ def plot_network_pkt_trace():
 
 
 if __name__ == '__main__':
-    # plot_mem_bandwidth()
-    plot_network_pkt_trace()
+    plot_mem_bandwidth()
+    # plot_network_pkt_trace()

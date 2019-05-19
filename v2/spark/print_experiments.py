@@ -11,16 +11,15 @@ from plot_one_experiment import ExperimentSetup
 
 
 # Filter experiments to generate plots
-def filter_experiments_to_consider():
+def filter_experiments_to_consider(results_dir):
     start_time = datetime.strptime('2019-03-15 00:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
     # All experiments after start_time that doesn't already have plots_ folder.
-    results_base_dir = plot_one_experiment.results_base_dir
     experiments_to_consider = []
-    all_experiments = [os.path.join(results_base_dir, item) for item in os.listdir(results_base_dir)
+    all_experiments = [os.path.join(results_dir, item) for item in os.listdir(results_dir)
                if item.startswith("Exp-")
-                   and os.path.isdir(os.path.join(results_base_dir, item))]
+                   and os.path.isdir(os.path.join(results_dir, item))]
 
     for experiment_dir_path in all_experiments:
         experiment_id = os.path.basename(experiment_dir_path)
@@ -35,8 +34,8 @@ def filter_experiments_to_consider():
 
 
 def main():
-    results_dir = plot_one_experiment.results_base_dir
-    all_experiments = filter_experiments_to_consider()
+    results_dir = "D:\Power Measurements\\v2\giraph" # plot_one_experiment.results_base_dir
+    all_experiments = filter_experiments_to_consider(results_dir)
 
     filter_results = False
     sizes_filter = [10]

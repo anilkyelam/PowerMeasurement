@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import json
 import traceback as tc
 import numpy as np
+import run_experiments
 
 
 # Experiment setup class
@@ -35,8 +36,7 @@ class ExperimentSetup:
 
 
 # Results base folder
-results_base_dir = "D:\Power Measurements\\v2\\spark"
-# results_base_dir = "D:\Power Measurements\\v2\Bad runs"
+results_base_dir = run_experiments.local_results_folder
 setup_details_file_name = "setup_details.txt"
 cpu_readings_file_name = "cpu.sar"
 mem_readings_file_name = "memory.sar"
@@ -413,7 +413,7 @@ def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
     all_readings = list(filter(lambda r: r[2] == label_name, all_readings))
 
     fig, ax = plt.subplots(1, 1)
-    fig.set_size_inches(w=20,h=10)
+    # fig.set_size_inches(w=20,h=10)
     fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Label: {3}".format(
         experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps, label_name))
 
@@ -463,10 +463,14 @@ def plot_cdf_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
 def render_subplot_by_label(ax, all_readings, filter_label, x_label, y_label, plot_label=None, plot_color=None):
+    min_time_stamp = min(map(lambda r: r[0], all_readings)) if all_readings.__len__() != 0 else datetime.min
     filtered_readings = list(filter(lambda r: r[2] == filter_label, all_readings))
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    x = list(map(lambda r: r[0], filtered_readings))
+    time_series = list(map(lambda r: r[0], filtered_readings))
+    x = []
+    if time_series.__len__() != 0:
+        x = [(t - min_time_stamp).total_seconds() for t in time_series]
     y = list(map(lambda r: r[3], filtered_readings))
     ax.plot(x, y, label=plot_label, color=plot_color)
     ax.legend()
@@ -474,10 +478,14 @@ def render_subplot_by_label(ax, all_readings, filter_label, x_label, y_label, pl
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
 def render_subplot_by_node(ax, all_readings, filter_node, x_label, y_label, plot_label=None):
+    min_time_stamp = min(map(lambda r: r[0], all_readings)) if all_readings.__len__() != 0 else datetime.min
     filtered_readings = list(filter(lambda r: r[1] == filter_node, all_readings))
     ax.set_xlabel(x_label)
     ax.set_ylabel(y_label)
-    x = list(map(lambda r: r[0], filtered_readings))
+    time_series = list(map(lambda r: r[0], filtered_readings))
+    x = []
+    if time_series.__len__() != 0:
+        x = [(t - min_time_stamp).total_seconds() for t in time_series]
     y = list(map(lambda r: r[3], filtered_readings))
     ax.plot(x, y, label=plot_label)
     ax.legend()
@@ -503,6 +511,11 @@ def gen_cumsum_curve(np_array, num_bin):
    y = np.zeros_like(x)
    y[1:] = h.repeat(2)
    return x, y
+
+
+def time_series_to_int_list(time_series):
+    min_time_stamp = min(time_series)
+    return [int((t - min_time_stamp).total_seconds()) for t in time_series]
 
 
 # Filters a subset of readings from all readings based on the filter label and plots it on provided axes
@@ -560,7 +573,7 @@ def parse_and_plot_results(experiment_id):
 
 # Filter experiments to generate plots
 def filter_experiments_to_consider():
-    start_time = datetime.strptime('2019-01-31 00:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2019-05-07 18:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
     # All experiments after start_time that doesn't already have plots_ folder.

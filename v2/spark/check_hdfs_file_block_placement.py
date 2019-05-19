@@ -12,16 +12,19 @@ from collections import Counter
 import matplotlib.pyplot as plt
 import run_experiments
 import socket
+import plot_one_experiment
+import numpy as np
 
 
 # Command to run
-file_path = "/user/ayelam/sort_inputs/20000mb.input"
+file_path = "/user/ayelam/sort_inputs/200000mb"
 hdfs_fsck_command = "hdfs fsck {0} -files -blocks -locations".format(file_path)
 # master_node_name = "ccied21.sysnet.ucsd.edu"
 master_node_name = "b09-40.sysnet.ucsd.edu"
-start_line_pattern = "/user/ayelam/sort_inputs/50000mb.input 1000000000 bytes, 8 block(s):  OK"
+file_part_prefix = "/user/ayelam/sort_inputs/200000mb/part_"
+part_number_pattern = "(part_([0-9]+)).+input"
 data_line_pattern = "^([0-9]+).+DatanodeInfoWithStorage[[]([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+)[:]50010.+$"
-power_plots_output_dir = 'D:\Power Measurements\\v2\PowerPlots\\' + datetime.now().strftime("%m-%d")
+power_plots_output_dir = os.path.join(plot_one_experiment.results_base_dir, "PowerPlots", datetime.now().strftime("%m-%d"))
 
 
 # Creates SSH client using paramiko lib.
@@ -54,39 +57,60 @@ def main():
     _, stdout, _ = ssh_client.exec_command(hdfs_fsck_command)
     output = stdout.readlines()
 
+
     parse_for_data = False
-    blocks_counter = Counter()
+    file_blocks_counter = { "default": Counter() }
+    file_part_label = "default"
     for line in output:
+
         if line.startswith(file_path):
             parse_for_data = True
+            matches = re.search(part_number_pattern, line)
+            if matches:
+                file_part_label = matches.group(1)
+                file_blocks_counter[file_part_label] = Counter()
             continue
 
         if parse_for_data:
             matches = re.match(data_line_pattern, line)
             if matches:
-                block_id = matches.group(1)
+                # block_id = matches.group(1)
                 node_ip = matches.group(2)
                 # print(node_ip)
                 # node_name = ip_to_node_dict[node_ip]
                 node_name = [node_name for node_name, addr in run_experiments.fat_tree_ip_mac_map.items() if addr[1] == node_ip][0] 
-                blocks_counter[node_name] += 1
+                file_blocks_counter[file_part_label][node_name] += 1
             else:
                 parse_for_data = False
 
-    if not blocks_counter:
+    if not file_blocks_counter:
         print("Something wrong!")
         exit()
 
-    fig, ax = plt.subplots(1,1)
-    fig.suptitle("Data block placement for file: " + file_path)
-    values = blocks_counter.values()
-    proportions = [value/sum(values) for value in values]
-    ax.bar(blocks_counter.keys(), proportions)
-    ax.set_ylabel("% of blocks")
-    ax.set_xlabel("Nodes")
-    print(blocks_counter)
+    # fig, ax = plt.subplots(1,1)
+    plt.suptitle("Data block placement for file: " + file_path)
+    plt.ylabel("% of blocks")
+    plt.xlabel("Nodes")
 
-    plt.show()
+    previous_values = None
+    for file_part in file_blocks_counter.keys():
+        nodes = file_blocks_counter[file_part_label].keys()
+        values = list(file_blocks_counter[file_part].values())
+        print(values)
+        if values.__len__() == 0:
+            continue
+        
+        # proportions = [value/sum(values) for value in values]
+        if previous_values is not None:
+            plt.bar(nodes, values, 0.35, bottom=previous_values)
+            previous_values = [x + y for x, y in zip(values, previous_values)]
+        else:
+            plt.bar(nodes, values, 0.35)
+            previous_values = values
+         
+    print(file_blocks_counter)
+    plt.legend()
+    # plt.show()
 
     if not os.path.exists(power_plots_output_dir):
         os.mkdir(power_plots_output_dir)

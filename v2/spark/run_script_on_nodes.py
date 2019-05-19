@@ -34,10 +34,11 @@ def ssh_execute_command(ssh_client, command, sudo_password = None):
 
 
 def create_or_reset_tmpfs_ram_disk(ssh_client, root_password):
-    mount_ram_disk_command = "mount -t tmpfs -o size=50G tmpfs /mnt/ramdisk"
-    ssh_execute_command(ssh_client, "rm -r -f /mnt/ramdisk", sudo_password=root_password)
+    mount_ram_disk_command = "mount -t tmpfs -o size=70G tmpfs /mnt/ramdisk"
+    ssh_execute_command(ssh_client, "rm -r /mnt/ramdisk", sudo_password=root_password)
     ssh_execute_command(ssh_client, "mkdir /mnt/ramdisk", sudo_password=root_password)
     ssh_execute_command(ssh_client, mount_ram_disk_command, sudo_password=root_password)
+    ssh_execute_command(ssh_client, "chmod 777 /mnt/ramdisk", sudo_password=root_password)
 
 
 # Utility to run a custom script on all the spark nodes
@@ -55,8 +56,9 @@ def run_script():
         ssh_client = create_ssh_client(node_full_name, 22, root_user_name, root_password)
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
-        #create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
-        ssh_execute_command(ssh_client, "du -hs /mnt/ramdisk/", sudo_password=root_password)
+        create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
+        # ssh_execute_command(ssh_client, "du -hs /mnt/ramdisk/", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "lsmem | grep Total", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "ps -aux | grep sar", sudo_password=root_password)
  
         # hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)

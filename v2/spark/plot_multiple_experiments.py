@@ -580,7 +580,7 @@ def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=
 
     fig, ax = plt.subplots(1, 1)
     # fig.set_size_inches(w=10,h=10)
-    fig.suptitle("Cuml count of network readings (reduce phase) " +
+    fig.suptitle("CDF of network readings (reduce phase) " +
                  ("on node {0}".format(node_name) if node_name else "on all nodes"))
 
     for exp in exp_metrics_list:
@@ -595,9 +595,8 @@ def plot_cdf_network_throughput(run_id, exp_metrics_list, output_dir, node_name=
 
         # print("Total net tx kB: " + str(sum(net_out_readings_kBps_reduce_phase)))
         net_out_readings_mbps = [r*8/1024 for r in net_out_readings_kBps_reduce_phase]
-        # cdf_x, cdf_y = plot_one_experiment.gen_cdf(net_out_readings_mbps, 1000)
-        cdf_x, cdf_y = plot_one_experiment.gen_cumsum_curve(net_out_readings_mbps, 1000)
-        # cdf_y = [y/8 for y in cdf_y]
+        cdf_x, cdf_y = plot_one_experiment.gen_cdf_curve(net_out_readings_mbps, 1000)
+        # cdf_x, cdf_y = plot_one_experiment.gen_cumsum_curve(net_out_readings_mbps, 1000)
 
         ax.set_xlabel("Network throughput mbps")
         ax.set_ylabel("Cumulative Count")
@@ -713,29 +712,31 @@ def load_all_experiments(start_time, end_time):
             setup_file_path = os.path.join(experiment_dir_path, "setup_details.txt")
             experiment_setup = ExperimentSetup(setup_file_path)
             experiment_setup.experiment_id = experiment_id
-            experiments.append(experiment_setup)
+            if start_time < experiment_setup.experiment_start_time < end_time:
+                experiments.append(experiment_setup)
 
-    return experiments
+    return sorted(experiments, key=lambda x: x.experiment_start_time, reverse=True)
 
 
 # Filters
 power_plots_output_dir = plot_one_experiment.results_base_dir + "\\PowerPlots\\" + datetime.now().strftime("%m-%d")
-global_start_time = datetime.strptime('2019-02-04 00:00:00', "%Y-%m-%d %H:%M:%S")
+global_start_time = datetime.strptime('2019-04-30 00:00:00', "%Y-%m-%d %H:%M:%S")
 global_end_time = datetime.now()
+filter_experiments = True
 experiments_filter = [
-    # 4, # "First runs with TC rate-limiting"
-    # "7", # "Ratelimiting for 100Gb" With more executors
-    # "Run-2019-02-16-18-30-17",    # Varying network rates - all CPUs working
-    # "Run-2019-02-28-12-23-00",    # Using Kyro serialization 
-    # "Run-2019-04-14-16-32-50",    "Run-2019-04-14-16-29-56", "Run-2019-04-14-16-26-48", "Run-2019-04-14-16-23-38", "Run-2019-04-14-16-19-34", # 100 GB runs with diff locality waits 0s to 10s
-    # "Run-2019-04-14-16-02-41",    "Run-2019-04-14-15-55-31", "Run-2019-04-14-15-51-13",    # 20GB runs
-    # "Run-2019-04-22-15-35-54",       # Comparing time of tera vs normal sort
     # "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",   # Comparing impact of different GCs and external shuffle service using netcdf option
-    # "Run-2019-04-29-17-12-49", "Run-2019-04-29-17-46-00", "Run-2019-04-30-22-48-34"     # Diff between g1gc, parallel gc and parallel gc with Xms 100g
-    "Exp-2019-05-01-00-12-33", "Exp-2019-04-30-23-16-38"      # Network cdf for 10 vs 40gbps in case of parallel gc with Xms 100g 
-    # "Run-2019-04-30-23-21-34", "Run-2019-04-30-23-24-03", "Run-2019-04-30-23-31-34", "Run-2019-05-01-00-09-21", "Run-2019-05-01-00-20-20", # 10 vs 40Gbps 10 runs each.
+    # "Exp-2019-05-01-00-12-33", "Exp-2019-04-30-23-16-38"      # Network cdf for 10 vs 40gbps in case of parallel gc with Xms 100g 
+    # "Exp-2019-04-30-23-16-38", "Exp-2019-05-06-10-28-26", "Exp-2019-05-06-20-45-47"         # 40gbps 100g runs - seperate input vs part of 200gb input
+    # "Run-2019-05-06-10-24-51"       # Contrasting network cdf of 20gb to 100gb runs in steps of 20gb. 
+    # "Exp-2019-05-06-10-28-26", "Exp-2019-05-06-21-02-23", "Exp-2019-05-06-21-07-31"           # 100g varying partition sizes 
+    # "Run-2019-05-08-00-14-39", "Run-2019-05-08-00-19-50", # 200gb and 100gb tera partitioning (no sort)
+    # "Exp-2019-05-10-21-38-53", "Exp-2019-05-10-20-59-18", "Exp-2019-05-10-22-01-54", "Exp-2019-05-10-22-12-02", "Exp-2019-05-10-22-30-47"
+    # "Exp-2019-05-14-15-28-06", "Exp-2019-05-14-15-25-01", "Exp-2019-05-14-15-15-43", "Exp-2019-05-14-15-21-14"
+    # "Run-2019-05-19-13-15-07"
+    # "Run-2019-05-19-13-32-55",
+    "Run-2019-05-19-13-49-58"
 ]
-input_sizes_filter = [100]
+input_sizes_filter = [20, 40, 60, 80, 100, 200]
 link_rates_filter = [10000, 40000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
@@ -745,13 +746,13 @@ link_rates_filter = [10000, 40000]
 def filter_experiments_to_consider(all_experiments):
     experiments_to_consider = []
 
-    for exp_or_run_id in experiments_filter:
-        for experiment in all_experiments:
-            if experiment.experiment_id == exp_or_run_id or experiment.experiment_group == exp_or_run_id:
-                if experiment.input_size_gb in input_sizes_filter:
-                    if experiment.link_bandwidth_mbps in link_rates_filter:
-                        # print(experiment.input_size_gb, experiment.link_bandwidth_mbps)
-                        experiments_to_consider.append(experiment)
+    for experiment in all_experiments:
+        if (not filter_experiments) or experiment.experiment_id in experiments_filter \
+            or experiment.experiment_group in experiments_filter:
+            if experiment.input_size_gb in input_sizes_filter:
+                if experiment.link_bandwidth_mbps in link_rates_filter:
+                    # print(experiment.input_size_gb, experiment.link_bandwidth_mbps)
+                    experiments_to_consider.append(experiment)
 
     return experiments_to_consider
 
@@ -774,7 +775,8 @@ def print_stats(all_results, power_plots_output_dir):
     for exp in all_results:
         duration_str = "Run time: {0} secs".format(round(exp.duration.total_seconds(), 2))
         stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
-        print("{0} {1} {2} {3}".format(exp.experiment_id, exp.experiment_setup.plot_friendly_name, duration_str, stages_start_end_times_str))
+        print("{:<25s} {:<30s} {:<25s} {:<100s}".format(duration_str, stages_start_end_times_str, exp.experiment_id, exp.experiment_setup.experiment_group_desc))
+        # print("{:<25s} {:<30s} {:<25s} {:<100s}".format(duration_str, stages_start_end_times_str, exp.experiment_id, exp.experiment_setup.plot_friendly_name))
         # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
         # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
          
@@ -785,9 +787,10 @@ def print_stats(all_results, power_plots_output_dir):
         # shutil.copytree(plots_dir_path, os.path.join(power_plots_output_dir, exp_id))
         pass
 
+    # Print job times per each link bandwidth
     for link_rate in link_rates_filter:
-        job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results if exp.link_bandwidth_mbps == link_rate]
-        print("{0}Gbps => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, np.mean(job_times), round(np.std(job_times), 1)))
+       job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results if exp.link_bandwidth_mbps == link_rate]
+       print("{0}Gbps => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, np.mean(job_times), round(np.std(job_times), 1)))
 
 
 def main():

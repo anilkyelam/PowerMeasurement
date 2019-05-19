@@ -7,7 +7,7 @@ pkill sar
 
 # Get inputs and validate them
 SRC_DIR_FULL_PATH=$1
-SIZE_IN_MB=$2
+SIZE_IN_MB=200000       #$2     --For now just prepare 200gb input for any input size, and use a part of it
 CACHE_HDFS_FILE=$3
 
 # Validate inputs

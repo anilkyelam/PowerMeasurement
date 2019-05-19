@@ -15,48 +15,30 @@
  * limitations under the License.
  */
 
+
 package PowerMeasurements
 
-import java.nio.charset.Charset
-import java.util.Comparator
-
-import com.google.common.primitives.UnsignedBytes
+import com.google.common.primitives.{Longs, UnsignedBytes}
 import org.apache.spark.{SparkConf, SparkContext}
-import org.apache.spark.sql.SparkSession
-
-import scala.collection.mutable.ArrayBuffer
 
 /**
- * This is a great example program to stress test Spark's shuffle mechanism.
- *
- * See http://sortbenchmark.org/
+ * TeraSort with Long Int keys instead of 10byte key comparison
  */
-object TeraSort {
-
-  implicit val caseInsensitiveOrdering : Comparator[Array[Byte]] =
-    UnsignedBytes.lexicographicalComparator
+object TeraSortLong {
 
   def main(args: Array[String]) {
 
     if (args.length < 2) {
-      println("Requires at least two arguments, the SparkMaster and Input size or file path")
+      println("Requires two arguments, SparkMaster and Input size or file path")
       System.exit(0)
     }
 
     val conf = new SparkConf().
       setMaster(args(0)).
-      setAppName("TeraSort")
-
+      setAppName("TeraSortLong")
     val sc = new SparkContext(conf)
 
-    val mySpark = SparkSession
-      .builder()
-      .appName("TeraSort")
-      .config(conf)
-      .getOrCreate()
-    import mySpark.implicits._
-
-    // Processing input from command line arguments args(1)
+    // Processing input from command line arguments
     var input_path:String = null
     try {
       val input_size_gb = args(1).toInt/1000
@@ -74,48 +56,35 @@ object TeraSort {
       }
     } catch {
       // If argument is not a number, consider it a path to input file or folder
-      case e: NumberFormatException => input_path = args(1)
+      case e: NumberFormatException => input_path = args(0)
     }
     println("Loading input files from path(s): " + input_path)
 
-
-    // If cmd line arguments 2 and 3 exist, then use them to set record size and number of partitions in final RDD
-    var record_size_bytes: Int = 100
-    var final_partition_count: Int = -1
-    if (args.length >= 4){
-      record_size_bytes = args(2).toInt
-      final_partition_count = args(3).toInt
-    }
-
-    TeraInputFormat.VALUE_LEN = record_size_bytes - TeraInputFormat.KEY_LEN
-
-    val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraInputFormat](input_path)
+    // val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraLongInputFormat](input_path).map(t => (keyBytesToLong(t._1),t._2))
+    val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraLongInputFormat](input_path).map(t => (keyBytesToLong(t._1), 0))
     dataset.setName("InputRDD")
     // dataset.persist()
     // dataset.mapPartitions(iter => Array(iter.size).iterator, true).collect().foreach(println)
 
-    /*val partitioned = dataset.partitionBy(new TeraSortPartitioner(dataset.partitions.length))
-    val sorted_df =  partitioned.toDF("key", "value").sortWithinPartitions("key")
-
-    sorted_df.printSchema()
-    var count = sorted_df.count()
-    sorted_df.select("key").rdd.map(c => String(c, "UTF-8")).saveAsTextFile("input/temp_output")
-    println(sorted_df.toJavaRDD.toDebugString)
-    sorted_df.explain(true)*/
-
-    if (final_partition_count == -1)  final_partition_count = dataset.partitions.length
-    val sorted = dataset.repartitionAndSortWithinPartitions(new TeraSortPartitioner(final_partition_count))
-    // sorted.setName("SortedRDD")
-    // sorted.saveAsTextFile("input/temp_output")
+    val sorted = dataset.repartitionAndSortWithinPartitions(new TeraSortLongPartitioner(dataset.partitions.length))
+    sorted.setName("SortedRDD")
+    // sorted.saveAsNewAPIHadoopFile[TeraOutputFormat](outputFile)
     // sorted.persist()
-    var count = sorted.count()
-    // println(sorted.toDebugString)
 
+    var count = sorted.count()
     println("Terasort output records count: " + count)
+
+    // Get sizes of sorted partitions
+    // sorted.mapPartitions(iter => Array(iter.size).iterator, true).collect().foreach(println)
 
     // To keep the spark job alive for checking things on Web UI
     // Thread.sleep(60000)
 
     sc.stop()
+  }
+
+  // Convert 10 byte key to LongInt from first 7 bytes
+  def keyBytesToLong(b: Array[Byte]): Long ={
+    Longs.fromBytes(0, b(0), b(1), b(2), b(3), b(4), b(5), b(6))
   }
 }

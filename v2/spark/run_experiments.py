@@ -51,9 +51,10 @@ fat_tree_hosts_file_name = "hosts_fattree"
 
 
 # Local constants
-local_node_scripts_folder = "D:\Git\PowerMeasurement\\v2\\spark\\node-scripts"
-local_spark_src_folder = 'D:\Git\PowerMeasurement\\v2\\spark\\spark-sort'
-local_results_folder = 'D:\Power Measurements\\v2\\spark'
+source_folder = os.path.dirname(os.path.abspath(__file__))
+local_node_scripts_folder = os.path.join(source_folder, "node-scripts")
+local_results_folder = os.path.join(source_folder, "results")
+local_spark_src_folder = os.path.join(source_folder, "spark-sort")
 prepare_for_experiment_file = 'prepare_for_experiment.sh'
 start_sar_readings_file = 'start_sar_readings.sh'
 stop_sar_readings_file = 'stop_sar_readings.sh'
@@ -61,6 +62,7 @@ start_power_readings_file = 'start_power_readings.sh'
 stop_power_readings_file = 'stop_power_readings.sh'
 cleanup_after_experiment_file = 'cleanup_after_experiment.sh'
 run_spark_job_file = 'run_spark_job.sh'
+log_verbose = True
 
 
 # Creates SSH client using paramiko lib.
@@ -81,7 +83,7 @@ def ssh_execute_command(ssh_client, command, sudo_password = None):
 
     _, stdout, stderr = ssh_client.exec_command(command)
     output = str(stdout.read() + stderr.read())
-    print(output)
+    if log_verbose: print(output)
     return output
 
 
@@ -273,8 +275,8 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
                 clear_page_inode_dentries_cache(ssh_client, user_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                # reset_network_rate_limit(ssh_client, user_password)
-                # set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
+                reset_network_rate_limit(ssh_client, user_password)
+                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
 
                 start_sar_readings(ssh_client, node_exp_folder_path)
 
@@ -366,8 +368,8 @@ def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
 def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc, exp_plot_desc):
     scala_class_names = [ "TeraSort" ] # "SortNoDisk", "TeraSort",  "InputProperties" ]
     input_sizes_mb = [200000]
-    link_bandwidth_mbps = [40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
-    iterations = range(1, 2)
+    link_bandwidth_mbps = [10000, 40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+    iterations = range(1, 6)
     cache_hdfs_input = True
 
     # Command line arguments
@@ -386,7 +388,7 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
 
 def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  
     print("Tearing down the environment...")      
-    # stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
+    stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_password)
     clean_up_on_each_node(root_user_name, root_password)
 
 
@@ -406,8 +408,12 @@ def main():
     parser.add_argument('--refresh', action='store_true', help='copy updated source scripts to NFS')
     parser.add_argument('--run', action='store_true', help='runs experiments')
     parser.add_argument('--desc', action='store', help='description for the current runs')
-    parser.add_argument('--plotname', action='store', help='plot friendly name for the experiment - used in plot legends')
+    parser.add_argument('--plotname', action='store', help='plot friendly name for the experiment - used in plot legends')   
+    parser.add_argument('-v', '--verbose', action='store_true', help='print verbose logs for debugging')
     args = parser.parse_args()
+
+    if args.verbose:
+        log_verbose = True
 
     if args.setup:
         setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password)
