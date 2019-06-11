@@ -1,3 +1,7 @@
+# Ignore results files
+Results/
+results/
+
 
 # Ignore credential files
 *.pass

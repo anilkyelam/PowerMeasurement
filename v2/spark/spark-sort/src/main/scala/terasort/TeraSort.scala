@@ -60,8 +60,8 @@ object TeraSort {
     var input_path:String = null
     try {
       val input_size_gb = args(1).toInt/1000
-      if (input_size_gb > 200 || input_size_gb % 20 != 0){
-        println("If specifying input size in gb, provide a multiple of 20gb and make sure it is not above 200gb!")
+      if (input_size_gb > 300 || input_size_gb % 20 != 0){
+        println("If specifying input size in gb, provide a multiple of 20gb and make sure it is not above 300gb!")
         System.exit(-1)
       }
 
@@ -80,6 +80,7 @@ object TeraSort {
 
 
     // If cmd line arguments 2 and 3 exist, then use them to set record size and number of partitions in final RDD
+    // Make sure the record size perfectly divides the input, otherwise EOF exception will result
     var record_size_bytes: Int = 100
     var final_partition_count: Int = -1
     if (args.length >= 4){
@@ -87,30 +88,16 @@ object TeraSort {
       final_partition_count = args(3).toInt
     }
 
-    TeraInputFormat.VALUE_LEN = record_size_bytes - TeraInputFormat.KEY_LEN
-
+    // Read in the input
     val dataset = sc.newAPIHadoopFile[Array[Byte], Array[Byte], TeraInputFormat](input_path)
     dataset.setName("InputRDD")
-    // dataset.persist()
-    // dataset.mapPartitions(iter => Array(iter.size).iterator, true).collect().foreach(println)
 
-    /*val partitioned = dataset.partitionBy(new TeraSortPartitioner(dataset.partitions.length))
-    val sorted_df =  partitioned.toDF("key", "value").sortWithinPartitions("key")
-
-    sorted_df.printSchema()
-    var count = sorted_df.count()
-    sorted_df.select("key").rdd.map(c => String(c, "UTF-8")).saveAsTextFile("input/temp_output")
-    println(sorted_df.toJavaRDD.toDebugString)
-    sorted_df.explain(true)*/
-
+    // Partition and sort the input with chosen number of final partitions
     if (final_partition_count == -1)  final_partition_count = dataset.partitions.length
     val sorted = dataset.repartitionAndSortWithinPartitions(new TeraSortPartitioner(final_partition_count))
-    // sorted.setName("SortedRDD")
-    // sorted.saveAsTextFile("input/temp_output")
-    // sorted.persist()
-    var count = sorted.count()
-    // println(sorted.toDebugString)
+    sorted.setName("SortedRDD")
 
+    var count = sorted.count()
     println("Terasort output records count: " + count)
 
     // To keep the spark job alive for checking things on Web UI

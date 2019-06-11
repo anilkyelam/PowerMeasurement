@@ -76,6 +76,7 @@ giraph /usr/local/home/hadoop/giraph/giraph-examples/target/giraph-examples-1.3.
 
 ======= Monitoring memory bandwidth
 Using PQoS provided by intel-cat-cmt tools: https://github.com/intel/intel-cmt-cat
+sudo pqos -m "all:[0-39]"
 
 
 ======= Network traffic breakdown

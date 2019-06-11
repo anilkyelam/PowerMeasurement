@@ -2,14 +2,16 @@ SRC_DIR_FULL_PATH=$1
 RESULTS_DIR_FULL_PATH=$2
 SIZE_IN_MB=$3
 SCALA_CLASS_NAME=$4
+RECORD_SIZE_BYTES=$5
+FINAL_PARTITION_COUNT=$6
 
 # Needed when running from sshclient in Python
 # export JAVA_HOME=/usr/lib/jvm/java-8-oracle; 
 
 # Run spark job
 spark-submit --class PowerMeasurements.${SCALA_CLASS_NAME} \
-        --num-executors 8 --executor-cores 40 --executor-memory 120g --driver-cores 5 --driver-memory 5g  \
-        "${SRC_DIR_FULL_PATH}/target/scala-2.11/sparksort_2.11-0.1.jar" yarn ${SIZE_IN_MB} \
+        --num-executors 8 --executor-cores 80 --executor-memory 150g --driver-cores 5 --driver-memory 5g  \
+        "${SRC_DIR_FULL_PATH}/target/scala-2.11/sparksort_2.11-0.1.jar" yarn ${SIZE_IN_MB} ${RECORD_SIZE_BYTES} ${FINAL_PARTITION_COUNT}  \
         > /mnt/ramdisk/spark.log 2>&1
 
 # Move log file to results folder

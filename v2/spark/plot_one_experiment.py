@@ -33,6 +33,8 @@ class ExperimentSetup:
         self.scala_class_name = json_dict.get("ScalaClassName", None)
         self.input_cached_in_hdfs = json_dict.get("InputHdfsCached", None)
         self.plot_friendly_name = json_dict.get("PlotFriendlyName", None)
+        self.record_size_bytes = json_dict.get("RecordSizeByes", None)
+        self.final_partition_count = json_dict.get("FinalPartitionCount", None)
 
 
 # Results base folder
@@ -152,7 +154,7 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                     net_out_KBps = float(matches.group(6))
 
                     # Taking only enp101s0 interface for now.
-                    if net_interface == "enp101s0":     # "lo"
+                    if net_interface == "enp59s0":     # "lo"
                         all_readings.append([timestamp, node_name, "net_in_Mbps", net_in_KBps * 8 / 1000])
                         all_readings.append([timestamp, node_name, "net_out_Mbps", net_out_KBps * 8 / 1000])
                         all_readings.append([timestamp, node_name, "net_total_Mbps", (net_in_KBps + net_out_KBps) * 8/ 1000])
@@ -304,32 +306,32 @@ def plot_all_for_one_node(plots_dir_full_path, all_readings, experiment_id, expe
     # render subplots
     render_subplot_by_label(ax1, all_readings,
                    filter_label='power_watts',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='Power (units?)',
                    plot_label='Power')
     render_subplot_by_label(ax2, all_readings,
                    filter_label='cpu_total_usage',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='CPU usage % (all cores)',
                    plot_label='CPU')
     render_subplot_by_label(ax3, all_readings,
                    filter_label='mem_usage_percent',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='Memory used %',
                    plot_label='Memory')
     render_subplot_by_label(ax4, all_readings,
                    filter_label='net_in_Mbps',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='Network Mbps',
                    plot_label='In')
     render_subplot_by_label(ax4, all_readings,
                    filter_label='net_out_Mbps',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='Network Mbps',
                    plot_label='Out')
     render_subplot_by_label(ax5, all_readings,
                    filter_label='disk_MBreads_ps',
-                   x_label='',
+                   x_label='Time (Sec)',
                    y_label='Disk MB/sec',
                    plot_label='Reads')
     render_subplot_by_label(ax5, all_readings,
@@ -414,14 +416,14 @@ def plot_all_for_one_label(plots_dir_full_path, all_readings, experiment_id, exp
 
     fig, ax = plt.subplots(1, 1)
     # fig.set_size_inches(w=20,h=10)
-    fig.suptitle("Experiment ID: {0}\nSpark sort on {1}GB input, Link bandwidth: {2}Mbps, Label: {3}".format(
+    fig.suptitle("Spark sort for {1}GB, {2} Mbps ({0})".format(
         experiment_id, experiment_setup.input_size_gb, experiment_setup.link_bandwidth_mbps, label_name))
 
     # render subplots
     for node_name in experiment_setup.all_spark_nodes:
         render_subplot_by_node(ax, all_readings,
                         filter_node=node_name,
-                        x_label='',
+                        x_label='Time (Sec)',
                         y_label=label_name,
                         plot_label=node_name)
 

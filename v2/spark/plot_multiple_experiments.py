@@ -734,9 +734,13 @@ experiments_filter = [
     # "Exp-2019-05-14-15-28-06", "Exp-2019-05-14-15-25-01", "Exp-2019-05-14-15-15-43", "Exp-2019-05-14-15-21-14"
     # "Run-2019-05-19-13-15-07"
     # "Run-2019-05-19-13-32-55",
-    "Run-2019-05-19-13-49-58"
+    # "Run-2019-05-19-13-49-58",
+    # "Run-2019-05-19-14-06-18",
+    # "Run-2019-05-19-15-41-59", "Run-2019-05-19-16-39-24"
+    # "Run-2019-05-31-18-54-33",
+    "Run-2019-05-31-20-34-44",
 ]
-input_sizes_filter = [20, 40, 60, 80, 100, 200]
+input_sizes_filter = [20, 40, 60, 80, 100, 200, 300]
 link_rates_filter = [10000, 40000]
 # input_sizes_filter = [40]
 # link_rates_filter = [200]
@@ -766,12 +770,13 @@ def print_network_usage_stats(exp_result):
     net_tx_by_stages = sorted([(stage, sum([s[1] for s in net_tx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
     net_rx_by_stages = sorted([(stage, sum([s[1] for s in net_rx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
 
-    # print(exp.experiment_id, duration_str, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
-    # print(exp.experiment_id, duration_str, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
+    print(exp.experiment_id, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
+    print(exp.experiment_id, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
 
 
 # Print some relevant stats from collected metrics
 def print_stats(all_results, power_plots_output_dir):
+    all_partition_counts = sorted(set([r.experiment_setup.final_partition_count for r in all_results]))
     for exp in all_results:
         duration_str = "Run time: {0} secs".format(round(exp.duration.total_seconds(), 2))
         stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
@@ -780,7 +785,7 @@ def print_stats(all_results, power_plots_output_dir):
         # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
         # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
          
-        # print_network_usage_stats(exp)
+        print_network_usage_stats(exp)
 
         # And copy the experiment to power plots output
         # plots_dir_path = plot_one_experiment.parse_and_plot_results(exp_id)
@@ -788,9 +793,13 @@ def print_stats(all_results, power_plots_output_dir):
         pass
 
     # Print job times per each link bandwidth
-    for link_rate in link_rates_filter:
-       job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results if exp.link_bandwidth_mbps == link_rate]
-       print("{0}Gbps => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, np.mean(job_times), round(np.std(job_times), 1)))
+    for partition_count in all_partition_counts:
+        for link_rate in link_rates_filter:
+            job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results 
+                            if exp.link_bandwidth_mbps == link_rate 
+                                and exp.experiment_setup.final_partition_count == partition_count]
+            print("{0}Gbps, partitions:{4} => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, round(np.mean(job_times), 2), round(np.std(job_times), 1), partition_count))
+            # print("{4} {0} {2} {3}".format(link_rate/1000, job_times, round(np.mean(job_times), 2), round(np.std(job_times), 1), partition_count))
 
 
 def main():

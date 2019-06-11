@@ -22,8 +22,8 @@ designated_hdfs_master_node = "b09-40"
 power_meter_nodes_in_order = []
 padding_in_secs = 60
 fat_tree_ip_mac_map = {
-    "b09-40": ("ec:0d:9a:68:21:c8", "10.0.0.1"),
-    "b09-38": ("ec:0d:9a:68:21:c4", "10.0.1.1"),
+    "b09-40": ("ec:0d:9a:68:21:c8", "10.0.0.1", ""),
+    "b09-38": ("ec:0d:9a:68:21:c4", "10.0.1.1", ""),
     "b09-44": ("ec:0d:9a:68:21:a4", "10.1.0.1"),
     "b09-42": ("ec:0d:9a:68:21:ac", "10.1.1.1"),
     "b09-34": ("ec:0d:9a:68:21:a8", "10.2.0.1"),
@@ -109,7 +109,7 @@ def set_up_on_each_node(root_user_name, password, current_toplogy_hosts_file_nam
                                     sudo_password=password)
 
             print("Setting IP address and adding ARP entries on " + node_name)
-            set_ip_address = ["ifconfig enp101s0 '{0}' netmask 255.0.0.0".format(fat_tree_ip_mac_map[node_name][1])]
+            set_ip_address = ["ifconfig enp59s0 '{0}' netmask 255.0.0.0".format(fat_tree_ip_mac_map[node_name][1])]
             set_arp_table_entries = ["arp -s {0} {1}".format(fat_tree_ip_mac_map[node][1], fat_tree_ip_mac_map[node][0]) 
                                             for node in fat_tree_ip_mac_map.keys() if node != node_name]
             for cmd in (set_ip_address + set_arp_table_entries):
@@ -176,11 +176,12 @@ def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
 
 
 # Starts spark job with specified algorithm (scala class name) and input size.
-def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name):
+def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_name, record_size_bytes, final_partition_count):
     print("Starting spark job")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, run_spark_job_file))
-    ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3} {4}'.format(script_file, remote_scripts_folder, node_exp_folder_path, 
-                                                                                input_size_mb, scala_class_name))
+    ssh_execute_command(ssh_client, 'bash {0} {1} {2} {3} {4} {5} {6}'.format(script_file, remote_scripts_folder, node_exp_folder_path, 
+                                                                                input_size_mb, scala_class_name, record_size_bytes, 
+                                                                                final_partition_count))
 
 
 # Stops SAR readings
@@ -213,11 +214,11 @@ def set_network_rate_limit(ssh_client, rate_limit_mbps, password_for_sudo):
 
     # Set the rate limit with TBF qdisc
     print("Setting network rate limit to {0} mbps".format(rate_limit_mbps))
-    tc_qdisc_set_tbf_rate_limit = 'tc qdisc add dev enp101s0 root tbf rate {0}mbit burst 1mbit latency 10ms'
+    tc_qdisc_set_tbf_rate_limit = 'tc qdisc add dev enp59s0 root tbf rate {0}mbit burst 1mbit latency 10ms'
     ssh_execute_command(ssh_client, tc_qdisc_set_tbf_rate_limit.format(rate_limit_mbps), sudo_password=password_for_sudo)
 
     # Check if rate limiting is properly set.
-    tc_qdisc_show_command = 'tc qdisc show  dev enp101s0'
+    tc_qdisc_show_command = 'tc qdisc show  dev enp59s0'
     output = ssh_execute_command(ssh_client, tc_qdisc_show_command)
     token_rate_text = "rate {0}Mbit".format(rate_limit_mbps) if rate_limit_mbps % 1000 != 0 \
         else "rate {0}Gbit".format(int(rate_limit_mbps/1000))
@@ -228,24 +229,24 @@ def set_network_rate_limit(ssh_client, rate_limit_mbps, password_for_sudo):
 # Resets any traffic control qdisc set for a node, which then defaults to pfifo.
 def reset_network_rate_limit(ssh_client, password_for_sudo):
     print("Resetting network rate limit, deleting any custom qdisc")
-    tc_qdist_reset_command = 'tc qdisc del dev enp101s0 root'
+    tc_qdist_reset_command = 'tc qdisc del dev enp59s0 root'
     ssh_execute_command(ssh_client, tc_qdist_reset_command, sudo_password=password_for_sudo)
 
 
 # Refreshes interface (Reloads the NIC driver?), clears up any mess that TC makes  
 def refresh_link_interface(ssh_client, password_for_sudo):
     print("Refreshing the link interface")
-    set_if_down_command = 'ip link set enp101s0 down'
-    set_if_up_command = 'ip link set enp101s0 up'
+    set_if_down_command = 'ip link set enp59s0 down'
+    set_if_up_command = 'ip link set enp59s0 up'
 
     ssh_execute_command(ssh_client, set_if_down_command, sudo_password=password_for_sudo)
     ssh_execute_command(ssh_client, set_if_up_command, sudo_password=password_for_sudo)
 
 
 # Runs a single experiment with specific configurations like input size, network rate, etc.
-# Prepares necessary setup to collect readings and runs spark jobs.
+# Prepares necessary setup to collect readings and runs spaenp59s0rk jobs.
 def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, user_name, user_password, input_size_mb, 
-                    link_bandwidth_mbps, cache_hdfs_file):
+                    link_bandwidth_mbps, record_size_bytes, final_partition_count, cache_hdfs_file):
     experiment_start_time = datetime.datetime.now()
     experiment_id = "Exp-" + experiment_start_time.strftime("%Y-%m-%d-%H-%M-%S")
 
@@ -275,8 +276,8 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
                 clear_page_inode_dentries_cache(ssh_client, user_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                reset_network_rate_limit(ssh_client, user_password)
-                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
+                # reset_network_rate_limit(ssh_client, user_password)
+                # set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
 
                 start_sar_readings(ssh_client, node_exp_folder_path)
 
@@ -290,7 +291,7 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
         # Kick off the run
         spark_job_start_time = datetime.datetime.now()
         driver_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, designated_spark_driver_node))
-        run_spark_job(driver_ssh_client, driver_exp_folder_path, input_size_mb, scala_class_name)
+        run_spark_job(driver_ssh_client, driver_exp_folder_path, input_size_mb, scala_class_name, record_size_bytes, final_partition_count)
         spark_job_end_time = datetime.datetime.now()
 
         # Wait a bit after the run
@@ -330,7 +331,10 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
                 "InputSizeGb": input_size_mb/1000.0,
                 "LinkBandwidthMbps": link_bandwidth_mbps,
                 "PaddingInSecs": padding_in_secs,
-                "PlotFriendlyName": exp_plot_desc
+                "PlotFriendlyName": exp_plot_desc,
+                "RecordSizeByes": record_size_bytes,
+                "FinalPartitionCount" : final_partition_count,
+                "Comments": "",
             }, setup_file, indent=4, sort_keys=True)
 
         # Cleanup on each node
@@ -367,9 +371,11 @@ def setup_env(root_user_name, root_password, hadoop_user_name, hadoop_password):
 # Run experiments
 def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_run_desc, exp_plot_desc):
     scala_class_names = [ "TeraSort" ] # "SortNoDisk", "TeraSort",  "InputProperties" ]
-    input_sizes_mb = [200000]
-    link_bandwidth_mbps = [10000, 40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
-    iterations = range(1, 6)
+    input_sizes_mb = [300000]
+    link_bandwidth_mbps = [40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
+    iterations = range(1, 2)
+    record_size_bytes = 100     # Cannot dynamically change without recompile for now
+    final_partition_counts = [6000]
     cache_hdfs_input = True
 
     # Command line arguments
@@ -378,12 +384,13 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
     # Run all experiments
     for sort_type in scala_class_names:
         for iter_ in iterations:
-            for link_bandwidth in link_bandwidth_mbps:
-                for input_size_mb in input_sizes_mb:
-                    print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
-                    run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, sort_type, root_user_name, root_password, 
-                        int(input_size_mb), link_bandwidth, cache_hdfs_file=cache_hdfs_input)
-                    # time.sleep(1*60)
+            for partition_count in final_partition_counts:
+                for link_bandwidth in link_bandwidth_mbps:
+                    for input_size_mb in input_sizes_mb:
+                        print("Running experiment: {0}, {1}, {2}".format(iter_, input_size_mb, link_bandwidth))
+                        run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, sort_type, root_user_name, root_password, 
+                            int(input_size_mb), link_bandwidth, record_size_bytes, partition_count, cache_hdfs_file=cache_hdfs_input)
+                        # time.sleep(1*60)
 
 
 def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  

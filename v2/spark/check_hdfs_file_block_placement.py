@@ -23,7 +23,7 @@ hdfs_fsck_command = "hdfs fsck {0} -files -blocks -locations".format(file_path)
 master_node_name = "b09-40.sysnet.ucsd.edu"
 file_part_prefix = "/user/ayelam/sort_inputs/200000mb/part_"
 part_number_pattern = "(part_([0-9]+)).+input"
-data_line_pattern = "^([0-9]+).+DatanodeInfoWithStorage[[]([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+)[:]50010.+$"
+data_line_pattern = "^([0-9]+).+len=([0-9]+).+DatanodeInfoWithStorage[[]([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+)[:]50010.+$"
 power_plots_output_dir = os.path.join(plot_one_experiment.results_base_dir, "PowerPlots", datetime.now().strftime("%m-%d"))
 
 
@@ -60,6 +60,8 @@ def main():
 
     parse_for_data = False
     file_blocks_counter = { "default": Counter() }
+    file_size_counter = { "default": Counter() }
+    total_size_counter = Counter()
     file_part_label = "default"
     for line in output:
 
@@ -69,17 +71,21 @@ def main():
             if matches:
                 file_part_label = matches.group(1)
                 file_blocks_counter[file_part_label] = Counter()
+                file_size_counter[file_part_label] = Counter()
             continue
 
         if parse_for_data:
             matches = re.match(data_line_pattern, line)
             if matches:
                 # block_id = matches.group(1)
-                node_ip = matches.group(2)
+                block_size_bytes = float(matches.group(2))
+                node_ip = matches.group(3)
                 # print(node_ip)
                 # node_name = ip_to_node_dict[node_ip]
                 node_name = [node_name for node_name, addr in run_experiments.fat_tree_ip_mac_map.items() if addr[1] == node_ip][0] 
                 file_blocks_counter[file_part_label][node_name] += 1
+                file_size_counter[file_part_label][node_name] += (block_size_bytes/(1024*1024*1024))
+                total_size_counter[node_name] += (block_size_bytes/(1024*1024*1024))
             else:
                 parse_for_data = False
 
@@ -88,28 +94,39 @@ def main():
         exit()
 
     # fig, ax = plt.subplots(1,1)
-    plt.suptitle("Data block placement for file: " + file_path)
-    plt.ylabel("% of blocks")
+    plt.suptitle("300 GB HDFS File Distribution")
+    # plt.ylabel("% of blocks")
+    plt.ylabel("Size GB")
     plt.xlabel("Nodes")
 
-    previous_values = None
-    for file_part in file_blocks_counter.keys():
-        nodes = file_blocks_counter[file_part_label].keys()
-        values = list(file_blocks_counter[file_part].values())
-        print(values)
-        if values.__len__() == 0:
-            continue
+    # Print file fraction on individual nodes
+    for k, v in total_size_counter.items():
+        print(k, ":", round(v, 2), " GB")
+
+    plt.bar(total_size_counter.keys(), total_size_counter.values(), 0.35)
+
+    # previous_values = []
+    # for file_part in file_size_counter.keys():
+    #     nodes = file_size_counter[file_part_label].keys()
+    #     values = list(file_size_counter[file_part].values())
+    #     # print(nodes)
+    #     # print(values)
+    #     # print(sum(values))
+    #     if values.__len__() == 0:
+    #         continue
         
-        # proportions = [value/sum(values) for value in values]
-        if previous_values is not None:
-            plt.bar(nodes, values, 0.35, bottom=previous_values)
-            previous_values = [x + y for x, y in zip(values, previous_values)]
-        else:
-            plt.bar(nodes, values, 0.35)
-            previous_values = values
-         
-    print(file_blocks_counter)
-    plt.legend()
+    #     # proportions = [value/sum(values) for value in values]
+    #     if previous_values:
+    #         plt.bar(nodes, values, 0.35, bottom=previous_values, label=file_part)
+    #         previous_values = [x + y for x, y in zip(values, previous_values)]
+    #     else:
+    #         plt.bar(nodes, values, 0.35, label=file_part)
+    #         previous_values = values
+
+    # print(previous_values)
+    # print(sum(previous_values))   
+    # print(file_blocks_counter)
+    # plt.legend(loc=5)
     # plt.show()
 
     if not os.path.exists(power_plots_output_dir):
