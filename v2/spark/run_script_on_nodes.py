@@ -39,6 +39,7 @@ def create_or_reset_tmpfs_ram_disk(ssh_client, root_password):
     ssh_execute_command(ssh_client, "mkdir /mnt/ramdisk", sudo_password=root_password)
     ssh_execute_command(ssh_client, mount_ram_disk_command, sudo_password=root_password)
     ssh_execute_command(ssh_client, "chmod 777 /mnt/ramdisk", sudo_password=root_password)
+    ssh_execute_command(ssh_client, "chown hadoop /mnt/ramdisk", sudo_password=root_password)
 
 
 # Utility to run a custom script on all the spark nodes
@@ -56,11 +57,23 @@ def run_script():
         ssh_client = create_ssh_client(node_full_name, 22, root_user_name, root_password)
 
         ssh_execute_command(ssh_client, "echo $HOSTNAME")
-        create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
+        # create_or_reset_tmpfs_ram_disk(ssh_client, root_password)
         # ssh_execute_command(ssh_client, "du -hs /mnt/ramdisk/", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "lsmem | grep Total", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "ps -aux | grep sar", sudo_password=root_password)
         # ssh_execute_command(ssh_client, "ip link show | grep enp", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "ps -u ssgrant", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/hadoop3.2/bin/container-executor", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chmod 6050  /usr/local/home/hadoop/hadoop3.2/bin/container-executor", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/hadoop3.2/", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/container-executor.cfg", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chmod g-w /usr/local/home/hadoop/ -R", sudo_password=root_password)
+        # ssh_execute_command(ssh_client, "chmod 600 /usr/local/home/hadoop/.ssh/id_rsa", sudo_password=root_password)
+        ssh_execute_command(ssh_client, "chown hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/*site.xml", sudo_password=root_password)
+
  
         hdp_user_ssh_client = create_ssh_client(node_full_name, 22, hadoop_user_name, hadoop_password)
         # ssh_execute_command(hdp_user_ssh_client, "ps -u hadoop")

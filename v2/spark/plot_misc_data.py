@@ -10,7 +10,7 @@ from datetime import timedelta
 import time
 import random
 import matplotlib.pyplot as plt
-from collections import Counter
+from collections import Counter, defaultdict
 import plot_one_experiment
 import socket
 import run_experiments
@@ -149,6 +149,118 @@ def plot_network_pkt_trace():
         plt.close()
 
 
+def plot_numa_mem_access():
+    experiments = ["Exp-2019-07-01-17-27-37", "Exp-2019-07-01-17-56-53", "Exp-2019-06-26-23-21-14" , "Exp-2019-06-19-14-37-41", "Exp-2019-06-19-15-06-01"]
+    for experiment_id in experiments:
+        experiment_dir_path = os.path.join(plot_one_experiment.results_base_dir, experiment_id)
+        mem_bw_file_path = os.path.join(experiment_dir_path, "memaccess.csv")
+        local_accesses = Counter()
+        remote_accesses = Counter()
+        i = 0
+        with open(mem_bw_file_path, "r") as lines:
+            for line in lines:
+                cols = line.split(",")
+                if cols and cols[0] == "*":
+                    # print(cols)
+                    local_accesses[i] = int(cols[4])/1000000.0
+                    remote_accesses[i] = int(cols[5])/1000000.0
+                    i += 1
+        
+        fig, ax = plt.subplots(1, 1)
+        # fig.set_size_inches(w=5,h=5)
+        fig.suptitle("Exp ID: {0} - NUMA Memory Accesses (Corrected!)".format(experiment_id))
+        ax.set_xlabel("Time (Secs)")
+        ax.set_ylabel("Acceses (in millions)")
+        ax.set_ylim(0, 1000)
+        ax.plot(local_accesses.keys(), local_accesses.values(), label="Local")
+        ax.plot(remote_accesses.keys(), remote_accesses.values(), label="Remote")
+        ax.plot(local_accesses.keys(), [x+y for x,y in zip(local_accesses.values(), remote_accesses.values())], label="Total")
+
+        plt.legend()
+        output_full_path = os.path.join(experiment_dir_path, "numa_mem_access_corrected_1.png")
+        plt.savefig(output_full_path)
+        # plt.show()
+
+
+# Collects all results from SAR and Powermeter, parses for required info and merges results onto single timeline.
+cpu_any_core_regex = r'^([0-9]+:[0-9]+:[0-9]+ [AP]M)\s+([a-z0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)\s+([0-9]+\.[0-9]+)$'
+
+def plot_numa_cpu_usage():
+    experiment_id = "Exp-2019-07-02-18-05-51"
+    experiment_folder_path = os.path.join(plot_one_experiment.results_base_dir, experiment_id)
+    
+    total_cpu_readings = defaultdict(float)
+    node0_cpu_readings = defaultdict(float)
+    node1_cpu_readings = defaultdict(float)
+    node0_cpu = 0
+    node1_cpu = 0
+    cpu_file_path = os.path.join(experiment_folder_path, "b09-40", "cpu.sar")
+    with open(cpu_file_path, "r") as lines:
+        first_line = True
+        date_part = None
+        previous_timestamp = None
+        for line in lines:
+            if first_line:
+                date_string = plot_one_experiment.parse_date_from_sar_file(first_line_in_file=line)
+                date_part = datetime.strptime(date_string, '%m/%d/%Y')
+                first_line = False
+
+            matches = re.match(cpu_any_core_regex, line)
+            if matches:
+                # Extract timesamp. NOTE: Does not deal with experiment running into the next day
+                time_string = matches.group(1)
+                time_part = datetime.strptime(time_string, '%I:%M:%S %p')
+                timestamp = date_part.replace(hour=time_part.hour, minute=time_part.minute, second=time_part.second)
+
+                # If reading moves on to the next second, save details of previous second
+                # NOTE: Does not record values for last timestamp
+                if previous_timestamp and previous_timestamp != timestamp:
+                    node0_cpu_readings[previous_timestamp] = node0_cpu/80
+                    node1_cpu_readings[previous_timestamp] = node1_cpu/80
+                    node0_cpu = 0
+                    node1_cpu = 0
+                
+                cpu_label = matches.group(2)
+                cpu_user_usage = float(matches.group(3))
+                cpu_system_usage = float(matches.group(5))
+                cpu_total_usage = cpu_user_usage + cpu_system_usage
+
+                if cpu_label == "all":
+                    total_cpu_readings[timestamp] = cpu_total_usage
+                else:
+                    cpu_id = int(cpu_label)
+                    numa_node = cpu_id % 2
+                    if not numa_node:
+                        node0_cpu += cpu_total_usage
+                    else:
+                        node1_cpu += cpu_total_usage
+
+                previous_timestamp = timestamp                
+
+    for key,val in node0_cpu_readings.items():
+        print(key, val, node1_cpu_readings[key])
+
+    fig, ax = plt.subplots(1, 1)
+    # fig.set_size_inches(w=15,h=7)
+    fig.suptitle("CPU Usage by NUMA node")
+    ax.set_xlabel("Time")
+    ax.set_ylabel("CPU %")
+
+    # ax.plot(total_cpu_readings.keys(), total_cpu_readings.values(), label="Total")
+    ax.plot(node0_cpu_readings.keys(), node0_cpu_readings.values(), label="Node 0")
+    ax.plot(node1_cpu_readings.keys(), node1_cpu_readings.values(), label="Node 1")
+
+    # Save the file, should be done before show()
+    plt.legend()
+    output_plot_file_name = "plot_{0}.png".format("cpu_usage_by_numa_node")
+    output_full_path = os.path.join(experiment_folder_path, output_plot_file_name)
+    plt.savefig(output_full_path)
+    plt.show()
+    plt.close()
+
+
 if __name__ == '__main__':
-    plot_mem_bandwidth()
+    # plot_mem_bandwidth()
     # plot_network_pkt_trace()
+    plot_numa_mem_access()
+    # plot_numa_cpu_usage()

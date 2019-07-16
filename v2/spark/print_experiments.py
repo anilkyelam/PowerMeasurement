@@ -12,7 +12,7 @@ from plot_one_experiment import ExperimentSetup
 
 # Filter experiments to generate plots
 def filter_experiments_to_consider(results_dir):
-    start_time = datetime.strptime('2019-03-15 00:00:00', '%Y-%m-%d %H:%M:%S')
+    start_time = datetime.strptime('2019-05-01 00:00:00', '%Y-%m-%d %H:%M:%S')
     end_time = datetime.now()
 
     # All experiments after start_time that doesn't already have plots_ folder.
@@ -34,7 +34,7 @@ def filter_experiments_to_consider(results_dir):
 
 
 def main():
-    results_dir = "D:\Power Measurements\\v2\giraph" # plot_one_experiment.results_base_dir
+    results_dir = plot_one_experiment.results_base_dir
     all_experiments = filter_experiments_to_consider(results_dir)
 
     filter_results = False

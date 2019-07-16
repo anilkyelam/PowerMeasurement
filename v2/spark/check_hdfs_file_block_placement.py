@@ -17,11 +17,11 @@ import numpy as np
 
 
 # Command to run
-file_path = "/user/ayelam/sort_inputs/200000mb"
+file_path = "/user/ayelam/sort_inputs"
 hdfs_fsck_command = "hdfs fsck {0} -files -blocks -locations".format(file_path)
 # master_node_name = "ccied21.sysnet.ucsd.edu"
 master_node_name = "b09-40.sysnet.ucsd.edu"
-file_part_prefix = "/user/ayelam/sort_inputs/200000mb/part_"
+file_part_prefix = "/user/ayelam/sort_inputs/part_"
 part_number_pattern = "(part_([0-9]+)).+input"
 data_line_pattern = "^([0-9]+).+len=([0-9]+).+DatanodeInfoWithStorage[[]([0-9]+[.][0-9]+[.][0-9]+[.][0-9]+)[:]50010.+$"
 power_plots_output_dir = os.path.join(plot_one_experiment.results_base_dir, "PowerPlots", datetime.now().strftime("%m-%d"))
@@ -102,7 +102,7 @@ def main():
     # Print file fraction on individual nodes
     for k, v in total_size_counter.items():
         print(k, ":", round(v, 2), " GB")
-
+        
     plt.bar(total_size_counter.keys(), total_size_counter.values(), 0.35)
 
     # previous_values = []

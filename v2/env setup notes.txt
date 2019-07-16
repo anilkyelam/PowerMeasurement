@@ -79,8 +79,8 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	<?xml-stylesheet type="text/xsl" href="configuration.xsl"?>
     <configuration>
         <property>
-            <name>fs.default.name</name>
-            <value>hdfs://10.0.0.1:9000</value>
+            <name>fs.default.name</name>			(<name>fs.defaultFS</name> in hadoop 3)
+            <value>hdfs://b09-40.sysnet.ucsd.edu:9000</value>
         </property>
     </configuration>
 	
@@ -134,7 +134,7 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	</configuration>
 	
 	
-10. Configure slaves files and add names of all the slaves, in ~/hadoop/etc/hadoop/slaves
+10. Configure slaves files and add names of all the slaves, in ~/hadoop/etc/hadoop/slaves (~/hadoop/etc/hadoop/workers in hadoop 3)
 	b09-44.sysnet.ucsd.edu
 	b09-42.sysnet.ucsd.edu
 	b09-40.sysnet.ucsd.edu
@@ -223,7 +223,27 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 		scp .profile b09-44:~/
 		scp -r ~/hadoop b09-44:~/
 		
-	
+
+19. Switching to YARN Secure Containers (LinuxContainerExecutor) to enable NUMA, however it comes with a lot of additional securty stuff we don't need but have to deal with.
+
+	https://hadoop.apache.org/docs/r2.7.2/hadoop-yarn/hadoop-yarn-site/SecureContainer.html
+	https://www.ibm.com/support/knowledgecenter/en/SSPT3X_4.1.0/com.ibm.swg.im.infosphere.biginsights.install.doc/doc/inst_adv_yarn_config.html
+	a. Enable settings as shown in the above links and change permissions of container-executor binary and cfg files as indicated. (including some folders)
+	b. To retain control over folders by hadoop user however, we use the hadoop group as the owning group for everything that should be owned by the root user.
+		sudo chown root:hadoop /usr/local/home/hadoop/hadoop3.2/bin/container-executor
+		sudo chmod 6050  /usr/local/home/hadoop/hadoop3.2/bin/container-executor
+		sudo chown root:hadoop /usr/local/home/hadoop/
+		sudo chown root:hadoop /usr/local/home/hadoop/hadoop3.2/
+		sudo chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/
+		sudo chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/
+		sudo chown root:hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/container-executor.cfg
+		
+		# Give write access to hadoop group on other files to not have to sudo to edit. However, this applies to none of the folders or files in above commands.
+		# Still a pain to create files in the above folders
+		sudo chmod g+rwX /usr/local/home/hadoop/spark -R
+		sudo chown hadoop /usr/local/home/hadoop/hadoop3.2/etc/hadoop/*site.xml
+
+			
 
 ======================================================  INTEGRATING SPARK ================================================================
 
@@ -237,7 +257,7 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	
 2. Integrate Spark with YARN
 	
-	To tell spark about hadoop folder, add below commands to spark
+	To tell spark about hadoop folder, add below commands to environment (using .profile file)
 	export HADOOP_CONF_DIR=/usr/local/home/hadoop/hadoop/etc/hadoop
 	export SPARK_HOME=/usr/local/home/hadoop/spark
 	export LD_LIBRARY_PATH=/usr/local/home/hadoop/hadoop/lib/native:$LD_LIBRARY_PATH
@@ -257,6 +277,12 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	Default executor node memory allocation (total must be less than YARN max): spark.executor.memory and spark.executor.memoryOverhead
 	Used 5g for all for starters
 	
+3.1 For YARN to map executor cores in Spark to vcores while creating containers, change the default capacity scheduler in YARN capacity-scheduler.xml
+	<property>
+        <name>yarn.scheduler.capacity.resource-calculator</name>
+        <!--value>org.apache.hadoop.yarn.util.resource.DefaultResourceCalculator</value-->
+        <value>org.apache.hadoop.yarn.util.resource.DominantResourceCalculator</value>
+    </property>
 
 4.  Enable monitoring: Logs to HDFS and configure history server
 	In $SPARK_HOME/conf/spark-defaults.conf, add following options:
@@ -281,7 +307,7 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	spark.history.fs.logDirectory           hdfs://10.0.0.1:9000/spark-logs
 	spark.history.fs.update.interval        10s
 	spark.history.ui.port                   18080
-	
+
 	
 5. Upload Spark Jars to hdfs for YARN to get access to them and distribute easily
 	https://stackoverflow.com/questions/41112801/property-spark-yarn-jars-how-to-deal-with-it
@@ -298,7 +324,7 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 
 7. To setup external shuffle services
 	Main article: https://spark.apache.org/docs/latest/running-on-yarn.html#configuring-the-external-shuffle-service
-	a. Set YARN classpath to point to the jar file at spark/yarn/spark-2.3.2-yarn-shuffle.jar. Make sure this jar is present on all nodes, I copied it to hadoop/share/yarn folder
+	a. Set YARN classpath to point to the jar file at spark/yarn/spark-2.3.2-yarn-shuffle.jar. Make sure this jar is present on all nodes, I copied it to hadoop/share/hadoop/yarn folder
 		that is already in the classpath.
 
 	b. Add Spark_Shufle as one of the auxiliary yarn services, and point to the class
@@ -315,13 +341,14 @@ cp: cannot open 'hadoop/share/hadoop/kms/tomcat/conf/tomcat-users.xml' for readi
 	c. Turn on using external shuffle in spark-defaults.sh
 		spark.shuffle.service.enabled           true
 
-		
 
 ========== Additional Workload Specific Customizations for HDFS or SPARK
 
 1. Created a "tmpfs" RAM disk at /mnt/ramdisk with 30G on all nodes, and pointed Spark scratch space to use it. 
 How: In YARN mode, "yarn.nodemanager.local-dirs" property controls the spark scratch space.  
 Why: To avoid writing large Shuffle intermediate (map) outputs to disk
+NOTE: When using linux secure containers on yarn, the folder must be owned by hadoop user
+	sudo chown hadoop /mnt/ramdisk
 
 2. Created cache pool for HDFS with 64GB of max memory, to cache input spark files.
 How: HDFS Read Caching feature

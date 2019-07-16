@@ -60,17 +60,17 @@ object TeraSort {
     var input_path:String = null
     try {
       val input_size_gb = args(1).toInt/1000
-      if (input_size_gb > 300 || input_size_gb % 20 != 0){
-        println("If specifying input size in gb, provide a multiple of 20gb and make sure it is not above 300gb!")
+      if (input_size_gb > 300 || input_size_gb % 100 != 0){
+        println("If specifying input size in gb, provide a multiple of 100gb and make sure it is not above 300gb!")
         System.exit(-1)
       }
 
-      val num_parts = input_size_gb / 20
+      val num_parts = input_size_gb * 2 / 25    // Each part is 12.5 GB
       var i : Int = 0
-      input_path = "/user/ayelam/sort_inputs/200000mb/part_{0}_200000mb.input".format(i)
+      input_path = "/user/ayelam/sort_inputs/part_%d.input".format(i)
       while (i < num_parts-1){
         i += 1
-        input_path += ",/user/ayelam/sort_inputs/200000mb/part_{0}_200000mb.input".format(i)
+        input_path += ",/user/ayelam/sort_inputs/part_%d.input".format(i)
       }
     } catch {
       // If argument is not a number, consider it a path to input file or folder

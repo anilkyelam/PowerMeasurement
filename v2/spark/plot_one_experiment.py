@@ -44,8 +44,10 @@ cpu_readings_file_name = "cpu.sar"
 mem_readings_file_name = "memory.sar"
 net_readings_file_name = "network.sar"
 diskio_readings_file_name = "diskio.sar"
+memaccess_readings_file_name = "memaccess.csv"
 power_readings_file_name = "power_readings.txt"
 spark_log_file_name = 'spark.log'
+spark_full_log_file_name = "spark-detailed.log"
 
 
 # Regex patterns. https://regex101.com/
@@ -153,7 +155,7 @@ def parse_results(results_dir_path, experiment_setup, output_readings_file_name,
                     net_in_KBps = float(matches.group(5))
                     net_out_KBps = float(matches.group(6))
 
-                    # Taking only enp101s0 interface for now.
+                    # Taking only enp59s0 interface for now.
                     if net_interface == "enp59s0":     # "lo"
                         all_readings.append([timestamp, node_name, "net_in_Mbps", net_in_KBps * 8 / 1000])
                         all_readings.append([timestamp, node_name, "net_out_Mbps", net_out_KBps * 8 / 1000])

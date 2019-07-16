@@ -136,10 +136,10 @@ def start_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
     print("Starting hdfs and yarn cluster")
     master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
-    ssh_execute_command(master_node_ssh_client, "bash hadoop/sbin/start-dfs.sh && bash hadoop/sbin/start-yarn.sh")
+    ssh_execute_command(master_node_ssh_client, "bash hadoop3.2/sbin/start-dfs.sh && bash hadoop3.2/sbin/start-yarn.sh")
 
     # Check if the cluster is up and running properly i.e., all the data nodes are up
-    output = ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs dfsadmin -report")
+    output = ssh_execute_command(master_node_ssh_client, "hadoop3.2/bin/hdfs dfsadmin -report")
     errors = ["Node {0} not found in the cluster report\n".format(node_name) for node_name in spark_nodes 
         if node_name != designated_hdfs_master_node and node_name not in output] 
     if errors.__len__() > 0:
@@ -154,10 +154,10 @@ def stop_hdfs_yarn_cluster(hadoop_user_name, hadoop_user_password):
     print("Removing hdfs cache directives of input files")
     master_node_full_name = "{0}.{1}".format(designated_hdfs_master_node, spark_nodes_dns_suffx)
     master_node_ssh_client = create_ssh_client(master_node_full_name, 22, hadoop_user_name, hadoop_user_password)
-    ssh_execute_command(master_node_ssh_client, "hadoop/bin/hdfs cacheadmin -removeDirectives -path '/user/ayelam'")
+    ssh_execute_command(master_node_ssh_client, "hadoop3.2/bin/hdfs cacheadmin -removeDirectives -path '/user/ayelam'")
 
     print("Stopping hdfs and yarn cluster")
-    ssh_execute_command(master_node_ssh_client, "bash hadoop/sbin/stop-yarn.sh && bash hadoop/sbin/stop-dfs.sh")
+    ssh_execute_command(master_node_ssh_client, "bash hadoop3.2/sbin/stop-yarn.sh && bash hadoop3.2/sbin/stop-dfs.sh")
 
 
 # Set up environment for each experiment
@@ -169,7 +169,7 @@ def prepare_env_for_experiment(ssh_client, password_for_sudo, input_size_mb, cac
 
 
 # Starts SAR readings
-def start_sar_readings(ssh_client, node_exp_folder_path, granularity_in_secs=1):
+def start_sar_readings(ssh_client, node_exp_folder_path, password_for_sudo, granularity_in_secs=1):
     print("Starting SAR readings")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, start_sar_readings_file))
     ssh_execute_command(ssh_client, 'bash {0} {1} {2}'.format(script_file, node_exp_folder_path, granularity_in_secs))
@@ -185,7 +185,7 @@ def run_spark_job(ssh_client, node_exp_folder_path, input_size_mb, scala_class_n
 
 
 # Stops SAR readings
-def stop_sar_readings(ssh_client):
+def stop_sar_readings(ssh_client, password_for_sudo):
     print("Stopping SAR readings")
     script_file = path_to_linux_style(os.path.join(remote_scripts_folder, stop_sar_readings_file))
     ssh_execute_command(ssh_client, 'bash {0}'.format(script_file))
@@ -276,10 +276,10 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
                 clear_page_inode_dentries_cache(ssh_client, user_password)
 
                 # Delete any non-default qdisc and set required network rate.
-                # reset_network_rate_limit(ssh_client, user_password)
-                # set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
+                reset_network_rate_limit(ssh_client, user_password)
+                set_network_rate_limit(ssh_client, link_bandwidth_mbps, user_password)
 
-                start_sar_readings(ssh_client, node_exp_folder_path)
+                start_sar_readings(ssh_client, node_exp_folder_path, user_password)
 
         # Start collecting power readings from the driver node. TODO: No powermeter connected for now.
         # driver_exp_folder_path = path_to_linux_style(os.path.join(experiment_folder_path, designated_driver_node))
@@ -304,7 +304,7 @@ def run_experiment(exp_run_id, exp_run_desc, exp_plot_desc, scala_class_name, us
         for node_name in spark_nodes:
             node_full_name = "{0}.{1}".format(node_name, spark_nodes_dns_suffx)
             with create_ssh_client(node_full_name, 22, user_name, user_password) as ssh_client:
-                stop_sar_readings(ssh_client)
+                stop_sar_readings(ssh_client, user_password)
 
         # Copy results to local machine
         with SCPClient(driver_ssh_client.get_transport()) as scp:
@@ -374,8 +374,8 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
     input_sizes_mb = [300000]
     link_bandwidth_mbps = [40000] # [200, 500, 1000, 2000, 4000, 6000, 10000]
     iterations = range(1, 2)
-    record_size_bytes = 100     # Cannot dynamically change without recompile for now
-    final_partition_counts = [6000]
+    record_size_bytes = 100    # Cannot dynamically change without recompile for now
+    final_partition_counts = [640]
     cache_hdfs_input = True
 
     # Command line arguments
@@ -392,6 +392,7 @@ def run(root_user_name, root_password, hadoop_user_name, hadoop_password, exp_ru
                             int(input_size_mb), link_bandwidth, record_size_bytes, partition_count, cache_hdfs_file=cache_hdfs_input)
                         # time.sleep(1*60)
 
+    print("Experimental run", exp_run_id, "complete.")
 
 def teardown_env(root_user_name, root_password, hadoop_user_name, hadoop_password):  
     print("Tearing down the environment...")      

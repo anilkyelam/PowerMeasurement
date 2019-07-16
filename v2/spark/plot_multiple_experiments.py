@@ -14,6 +14,7 @@ import plot_one_experiment
 from plot_one_experiment import ExperimentSetup
 import numpy as np
 from pprint import pprint
+import json
 
 
 class ExperimentMetrics:
@@ -26,6 +27,9 @@ class ExperimentMetrics:
     total_power_all_nodes = None
     per_node_metrics_dict = None
     stages_start_end_times = {}
+    precise_total_time = None
+    precise_map_time = None
+    precise_reduce_time = None
 
     def __init__(self, experiment_id, experiment_setup, per_node_metrics_dict):
         self.experiment_id = experiment_id
@@ -224,8 +228,8 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
                     timestamp = date_part.replace(hour=time_part.hour, minute=time_part.minute, second=time_part.second)
                     net_interface = matches.group(2)
 
-                    # Taking only enp101s0 interface for now.
-                    if net_interface == "enp101s0" and (experiment_setup.spark_job_start_time < timestamp < experiment_setup.spark_job_end_time):
+                    # Taking enp59s0 or lo interface for now.
+                    if net_interface == "enp59s0" and (experiment_setup.spark_job_start_time < timestamp < experiment_setup.spark_job_end_time):
                         net_in_KBps = float(matches.group(5))
                         net_out_KBps = float(matches.group(6))
                         sum_net_in_kBps += net_in_KBps
@@ -248,9 +252,27 @@ def get_metrics_summary_for_experiment(experiment_id, experiment_setup):
         per_node_metrics_dict[node_name].per_stage_net_out_kBps = per_stage_net_out_kBps
         per_node_metrics_dict[node_name].net_out_kBps_time_series = net_out_kBps_time_series
 
+    # Get accurate spark job times from detailed spark log if available
+    spark_full_log_full_path = os.path.join(experiment_dir_path, experiment_setup.designated_driver_node, plot_one_experiment.spark_full_log_file_name)
+
+    precise_start_time = None
+    precise_end_time = None
+    if os.path.exists(spark_log_full_path):
+        with open(spark_full_log_full_path, "r") as lines:
+            for line in lines:
+                if 'SparkListenerJobStart' in line:
+                    json_dict = json.loads(line)
+                    precise_start_time = float(json_dict['Submission Time'])
+                if 'SparkListenerJobEnd' in line:
+                    json_dict = json.loads(line)
+                    precise_end_time = float(json_dict['Completion Time'])
+
+
     exp_metrics = ExperimentMetrics(experiment_id, experiment_setup, per_node_metrics_dict)
     exp_metrics.stages_start_end_times = stages_start_end_times
+    if precise_start_time and precise_end_time: exp_metrics.precise_total_time = (precise_end_time - precise_start_time)/1000
     return exp_metrics
+
 
 
 def plot_total_power_usage_per_run_type(run_id, exp_metrics_list, output_dir, experiment_type, node_name=None):
@@ -724,21 +746,14 @@ global_start_time = datetime.strptime('2019-04-30 00:00:00', "%Y-%m-%d %H:%M:%S"
 global_end_time = datetime.now()
 filter_experiments = True
 experiments_filter = [
-    # "Run-2019-04-22-15-35-54", "Run-2019-04-22-16-26-04", "Run-2019-04-23-16-39-37", "Run-2019-04-23-17-02-29",   # Comparing impact of different GCs and external shuffle service using netcdf option
-    # "Exp-2019-05-01-00-12-33", "Exp-2019-04-30-23-16-38"      # Network cdf for 10 vs 40gbps in case of parallel gc with Xms 100g 
-    # "Exp-2019-04-30-23-16-38", "Exp-2019-05-06-10-28-26", "Exp-2019-05-06-20-45-47"         # 40gbps 100g runs - seperate input vs part of 200gb input
-    # "Run-2019-05-06-10-24-51"       # Contrasting network cdf of 20gb to 100gb runs in steps of 20gb. 
-    # "Exp-2019-05-06-10-28-26", "Exp-2019-05-06-21-02-23", "Exp-2019-05-06-21-07-31"           # 100g varying partition sizes 
-    # "Run-2019-05-08-00-14-39", "Run-2019-05-08-00-19-50", # 200gb and 100gb tera partitioning (no sort)
-    # "Exp-2019-05-10-21-38-53", "Exp-2019-05-10-20-59-18", "Exp-2019-05-10-22-01-54", "Exp-2019-05-10-22-12-02", "Exp-2019-05-10-22-30-47"
-    # "Exp-2019-05-14-15-28-06", "Exp-2019-05-14-15-25-01", "Exp-2019-05-14-15-15-43", "Exp-2019-05-14-15-21-14"
-    # "Run-2019-05-19-13-15-07"
-    # "Run-2019-05-19-13-32-55",
-    # "Run-2019-05-19-13-49-58",
-    # "Run-2019-05-19-14-06-18",
-    # "Run-2019-05-19-15-41-59", "Run-2019-05-19-16-39-24"
-    # "Run-2019-05-31-18-54-33",
-    "Run-2019-05-31-20-34-44",
+    # "Run-2019-06-10-17-27-05",       # Locality wait 100s, analyzing the variation in network xput across nodes
+    # "Run-2019-06-10-22-21-08", "Run-2019-06-11-00-08-22"    # Locality wait 0s, no numa vs use numa optimization option
+    # "Run-2019-06-11-12-25-43", "Run-2019-06-11-12-33-16"   # Locality wait 100s, use numa vs no numa optimization option
+    # "Run-2019-06-11-13-24-12", "Run-2019-06-11-13-31-23"   # Two executors per node
+    
+    # "Exp-2019-06-13-18-12-52", "Exp-2019-06-13-18-14-25",     # 300gb sort; 1sec locality wait; 10 vs 40gbps after perfect hdfs file distribution
+    # "Exp-2019-06-13-18-53-16", "Exp-2019-06-13-18-54-36"      # 200gb sort; 1sec locality wait; 10 vs 40gbps after perfect hdfs file distribution
+    "Exp-2019-07-10-13-56-23", "Exp-2019-07-10-13-52-47", "Exp-2019-07-10-13-31-29", "Exp-2019-07-10-13-37-28", "Exp-2019-07-10-17-14-23",
 ]
 input_sizes_filter = [20, 40, 60, 80, 100, 200, 300]
 link_rates_filter = [10000, 40000]
@@ -764,28 +779,43 @@ def filter_experiments_to_consider(all_experiments):
 # Print some statistics on total network throughput in spark stages
 def print_network_usage_stats(exp_result):
     exp = exp_result
-    net_tx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_out_kBps.items()]
-    net_rx_by_stages_on_each_node = [item for n in exp.per_node_metrics_dict.values() for item in n.per_stage_net_in_kBps.items()]
-    all_stages = set([s[0] for s in net_tx_by_stages_on_each_node])
-    net_tx_by_stages = sorted([(stage, sum([s[1] for s in net_tx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
-    net_rx_by_stages = sorted([(stage, sum([s[1] for s in net_rx_by_stages_on_each_node if s[0] == stage])) for stage in all_stages])
+    
 
-    print(exp.experiment_id, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_by_stages], round(exp.total_net_out_KB_all_nodes/(1024*1024), 2))
-    print(exp.experiment_id, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_by_stages], round(exp.total_net_in_KB_all_nodes/(1024*1024), 2))
+    net_tx_by_stages_on_each_node = [(node, stage, net_tx) for (node, val) in exp.per_node_metrics_dict.items() for (stage, net_tx) in val.per_stage_net_out_kBps.items()]
+    net_rx_by_stages_on_each_node = [(node, stage, net_rx) for (node, val) in exp.per_node_metrics_dict.items() for (stage, net_rx) in val.per_stage_net_in_kBps.items()]
+    all_nodes = exp.per_node_metrics_dict.keys()   
+    all_stages = set([s[1] for s in net_tx_by_stages_on_each_node])
+
+    # Network usage breakdown by stage, aggregated over all nodes
+    print("Total TX (GB) all nodes: {:.2f}".format(exp.total_net_out_KB_all_nodes/(1024*1024)))
+    print("Total RX (GB) all nodes: {:.2f}".format(exp.total_net_in_KB_all_nodes/(1024*1024)))
+    for stage in sorted(all_stages):
+        net_tx_by_stage = [s[2]/(1024*1024) for s in net_tx_by_stages_on_each_node if s[1] == stage]
+        net_rx_by_stage = [s[2]/(1024*1024) for s in net_rx_by_stages_on_each_node if s[1] == stage]
+        print("Stage ", stage, "TX (GB): Total: {:.2f} GB, Per Node: {:.2f} ({:.2f}) GB".format(np.sum(net_tx_by_stage), np.mean(net_tx_by_stage), np.std(net_tx_by_stage)))
+        print("Stage ", stage, "RX (GB): Total: {:.2f} GB, Per Node: {:.2f} ({:.2f}) GB".format(np.sum(net_rx_by_stage), np.mean(net_rx_by_stage), np.std(net_rx_by_stage)))
+
+    # Network usage breakdown by stage, for each node
+    for node_name in all_nodes:
+        net_tx_per_node_by_stage = sorted([(stage, sum([s[2] for s in net_tx_by_stages_on_each_node if s[0] == node_name and s[1] == stage])) for stage in all_stages])
+        net_rx_per_node_by_stage = sorted([(stage, sum([s[2] for s in net_rx_by_stages_on_each_node if s[0] == node_name and s[1] == stage])) for stage in all_stages])
+        # print(node_name, "TX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_tx_per_node_by_stage])
+        # print(node_name, "RX (GB)", [(k, round(v/(1024*1024),2)) for k,v in net_rx_per_node_by_stage])
 
 
 # Print some relevant stats from collected metrics
 def print_stats(all_results, power_plots_output_dir):
     all_partition_counts = sorted(set([r.experiment_setup.final_partition_count for r in all_results]))
     for exp in all_results:
-        duration_str = "Run time: {0} secs".format(round(exp.duration.total_seconds(), 2))
+        # duration_str = "Run time: {0} secs".format(round(exp.duration.total_seconds(), 2))
+        duration_str = "Run time: {:.2f} secs".format(exp.precise_total_time)
         stages_start_end_times_str = ", ".join([ "{0}: {1}".format(k, round((v[1] - v[0]).seconds, 1)) for k,v in exp.stages_start_end_times.items()])
-        print("{:<25s} {:<30s} {:<25s} {:<100s}".format(duration_str, stages_start_end_times_str, exp.experiment_id, exp.experiment_setup.experiment_group_desc))
+        print("{:<25s} {:<25s} {:<30s}{:<50s}".format( exp.experiment_id, duration_str, stages_start_end_times_str, exp.experiment_setup.experiment_group_desc))
         # print("{:<25s} {:<30s} {:<25s} {:<100s}".format(duration_str, stages_start_end_times_str, exp.experiment_id, exp.experiment_setup.plot_friendly_name))
         # print("{0} ({1})".format(str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1))))
         # print("{0} {1} {2}".format(exp.link_bandwidth_mbps, str(round(exp.total_power_all_nodes/3600, 2)), str(round(exp.duration.seconds/60, 1)), sep=", "))
          
-        print_network_usage_stats(exp)
+        # print_network_usage_stats(exp)
 
         # And copy the experiment to power plots output
         # plots_dir_path = plot_one_experiment.parse_and_plot_results(exp_id)
@@ -793,12 +823,12 @@ def print_stats(all_results, power_plots_output_dir):
         pass
 
     # Print job times per each link bandwidth
-    for partition_count in all_partition_counts:
-        for link_rate in link_rates_filter:
-            job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results 
-                            if exp.link_bandwidth_mbps == link_rate 
-                                and exp.experiment_setup.final_partition_count == partition_count]
-            print("{0}Gbps, partitions:{4} => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, round(np.mean(job_times), 2), round(np.std(job_times), 1), partition_count))
+    # for partition_count in all_partition_counts:
+    #     for link_rate in link_rates_filter:
+    #         job_times = [round(exp.duration.total_seconds(), 2) for exp in all_results 
+    #                         if exp.link_bandwidth_mbps == link_rate 
+    #                             and exp.experiment_setup.final_partition_count == partition_count]
+    #         print("{0}Gbps, partitions:{4} => Mean:{2} std:{3}, {1}".format(link_rate/1000, job_times, round(np.mean(job_times), 2), round(np.std(job_times), 1), partition_count))
             # print("{4} {0} {2} {3}".format(link_rate/1000, job_times, round(np.mean(job_times), 2), round(np.std(job_times), 1), partition_count))
 
 

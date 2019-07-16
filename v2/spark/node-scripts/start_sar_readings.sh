@@ -21,5 +21,6 @@ nohup sar -r ${GRANULARITY}  > ${DIR_FULL_PATH}/memory.sar 2>&1 &
 nohup sar -b ${GRANULARITY}  > ${DIR_FULL_PATH}/diskio.sar 2>&1 &
 nohup sar -P ALL ${GRANULARITY}  > ${DIR_FULL_PATH}/cpu.sar 2>&1 &
 nohup sar -n DEV ${GRANULARITY}  > ${DIR_FULL_PATH}/network.sar 2>&1 &
+# nohup /home/ayelam/bf-cluster/packages/pcm/pcm-numa.x ${GRANULARITY} /csv > ${DIR_FULL_PATH}/memaccess.csv 2>&1 &
 
 
